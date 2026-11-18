@@ -25,6 +25,7 @@ from .model import (
     USER_TYPES,
     ArrivalCustomer,
     BankQueuingModel,
+    classify_utilization_regime,
 )
 
 
@@ -170,6 +171,7 @@ class BankSimulationEngine:
                 "std_wait_wq": 0.0,
                 "p95_wait_wq": 0.0,
                 "max_wait_wq": 0.0,
+                "prob_wq_gt_5min": 0.0,
                 "mean_service_s": 0.0,
                 "std_service_s": 0.0,
                 "mean_system_w": 0.0,
@@ -231,6 +233,7 @@ class BankSimulationEngine:
             "std_wait_wq": float(np.std(wait_times, ddof=1)) if n > 1 else 0.0,
             "p95_wait_wq": float(np.percentile(wait_times, 95)),
             "max_wait_wq": float(np.max(wait_times)),
+            "prob_wq_gt_5min": float(np.mean(wait_times > 5.0) * 100.0),
             "mean_service_s": float(np.mean(service_times)),
             "std_service_s": float(np.std(service_times, ddof=1)) if n > 1 else 0.0,
             "mean_system_w": float(np.mean(system_times)),
@@ -282,6 +285,7 @@ class BankSimulationEngine:
         }
 
         rng = np.random.default_rng(routing_seed)
+        waits_by_arrival_order: List[Tuple[float, float, float]] = []
 
         for cust in arrivals:
             eligible = eligible_indices_by_action[cust.action]
@@ -305,9 +309,11 @@ class BankSimulationEngine:
 
             queues_by_cashier[chosen].append(cust)
             start_t = max(cust.arrival_time, free_times[chosen])
+            wait_t = start_t - cust.arrival_time
             end_t = start_t + cust.service_time
             free_times[chosen] = end_t
             departure_queues[chosen].append(end_t)
+            waits_by_arrival_order.append((cust.arrival_time, wait_t, wait_t + cust.service_time))
 
         cashier_results = {}
         all_records: List[Tuple[str, str, float, float, float]] = []
@@ -369,6 +375,8 @@ class BankSimulationEngine:
             "mean_wait_wq": float(np.mean(all_waits)) if all_waits else 0.0,
             "p95_wait_wq": float(np.percentile(all_waits, 95)) if all_waits else 0.0,
             "max_wait_wq": float(np.max(all_waits)) if all_waits else 0.0,
+            "prob_wq_gt_5min": float(np.mean(np.asarray(all_waits) > 5.0) * 100.0) if all_waits else 0.0,
+            "waits_by_arrival_order": waits_by_arrival_order,
             "mean_service_s": float(np.mean(all_services)) if all_services else 0.0,
             "mean_system_w": float(np.mean(all_systems)) if all_systems else 0.0,
             "mean_rho": float(np.mean([r["utilization_rho"] for r in cashier_results.values()])),
@@ -458,6 +466,19 @@ class BankSimulationEngine:
             n_w_0, n_w_it = self._required_n_for_precision(w_sd, w_tol_min, n0, confidence)
             n_u_0, n_u_it = self._required_n_for_precision(u_sd, users_abs_tol, n0, confidence)
 
+            wq_se = wq_sd / math.sqrt(n0)
+            wq_me = 0.5 * (wq_u - wq_l)
+            wq_er_pct = (wq_me / wq_m * 100.0) if wq_m > 0.0 else 0.0
+            n_wq_er10_prof = max(2, math.ceil(n0 * ((wq_er_pct / 10.0) ** 2))) if wq_er_pct > 0 else 2
+
+            w_se = w_sd / math.sqrt(n0)
+            w_me = 0.5 * (w_u - w_l)
+            w_er_pct = (w_me / w_m * 100.0) if w_m > 0.0 else 0.0
+            n_w_er5_prof = max(2, math.ceil(n0 * ((w_er_pct / 5.0) ** 2))) if w_er_pct > 0 else 2
+
+            u_me = 0.5 * (u_u - u_l)
+            u_er_pct = (u_me / u_m * 100.0) if u_m > 0.0 else 0.0
+
             rows.append({
                 "escenario": skey,
                 "nombre_corto": cfg["nombre_corto"],
@@ -465,19 +486,27 @@ class BankSimulationEngine:
                 "t_crit_piloto_95": t_crit_two_sided(max(1, n0 - 1), confidence=confidence),
                 "wq_media_min": wq_m,
                 "wq_sd_min": wq_sd,
-                "wq_semiamp_ic95_min": 0.5 * (wq_u - wq_l),
+                "wq_se_min": wq_se,
+                "wq_semiamp_ic95_min": wq_me,
+                "wq_ancho_ic95_min": 2.0 * wq_me,
+                "wq_er_piloto_pct": wq_er_pct,
+                "n_req_wq_er10_prof": n_wq_er10_prof,
                 "tol_wq_min": wq_abs_tol_min,
                 "n_req_wq_piloto": n_wq_0,
                 "n_req_wq_iterativo": n_wq_it,
                 "w_media_min": w_m,
                 "w_sd_min": w_sd,
-                "w_semiamp_ic95_min": 0.5 * (w_u - w_l),
+                "w_se_min": w_se,
+                "w_semiamp_ic95_min": w_me,
+                "w_er_piloto_pct": w_er_pct,
+                "n_req_w_er5_prof": n_w_er5_prof,
                 "tol_w_rel_5pct_min": w_tol_min,
                 "n_req_w_piloto": n_w_0,
                 "n_req_w_iterativo": n_w_it,
                 "usuarios_media_dia": u_m,
                 "usuarios_sd_dia": u_sd,
-                "usuarios_semiamp_ic95": 0.5 * (u_u - u_l),
+                "usuarios_semiamp_ic95": u_me,
+                "usuarios_er_piloto_pct": u_er_pct,
                 "tol_usuarios": users_abs_tol,
                 "n_req_usuarios_iterativo": n_u_it,
                 "n_req_global_max": max(n_wq_it, n_w_it, n_u_it),
@@ -586,6 +615,7 @@ class BankSimulationEngine:
                     "wq_pago_min": act_m["Pago"]["mean_wait_wq"],
                     "espera_p95_min": sim_res["p95_wait_wq"],
                     "espera_max_min": sim_res["max_wait_wq"],
+                    "prob_espera_mayor_5m_pct": sim_res["prob_wq_gt_5min"],
                     "servicio_medio_s_min": sim_res["mean_service_s"],
                     "atencion_total_w_min": sim_res["mean_system_w"],
                     "w_retiro_min": act_m["Retiro"]["mean_system_w"],
@@ -659,6 +689,7 @@ class BankSimulationEngine:
                         "espera_cola_wq_min": cres["mean_wait_wq"],
                         "atencion_total_w_min": cres["mean_system_w"],
                         "espera_max_min": cres["max_wait_wq"],
+                        "prob_espera_mayor_5m_pct": cres["prob_wq_gt_5min"],
                         "utilizacion_rho": cres["utilization_rho"],
                         "ocio_pct": cres["idle_pct"],
                         "cola_media_lq": cres["lq_empirical"],
@@ -723,21 +754,28 @@ class BankSimulationEngine:
                 "atendidos_en_turno_sd": turn_sd,
                 "espera_wq_media_min": wq_m,
                 "espera_wq_sd_min": wq_sd,
+                "espera_wq_se_min": wq_sd / np.sqrt(num_replicas) if num_replicas > 0 else 0.0,
                 "espera_wq_ic95_inf": wq_l,
                 "espera_wq_ic95_sup": wq_u,
+                "espera_wq_er_pct": ((0.5 * (wq_u - wq_l)) / wq_m * 100.0) if wq_m > 0.0 else 0.0,
                 "wq_retiro_media_min": wqr_m,
                 "wq_pago_media_min": wqp_m,
                 "peor_cajero_wq_media_min": pwq_m,
                 "peor_cajero_wq_sd_min": pwq_sd,
+                "prob_wq_mayor_5m_pct": float(sub["prob_espera_mayor_5m_pct"].mean()),
+                "prob_wq_mayor_5m_teorica_pct": theo["weighted_prob_wq_gt_5min"] * 100.0,
                 "servicio_s_media_min": s_m,
                 "servicio_s_sd_min": s_sd,
                 "sistema_w_media_min": w_m,
                 "sistema_w_sd_min": w_sd,
+                "sistema_w_se_min": w_sd / np.sqrt(num_replicas) if num_replicas > 0 else 0.0,
                 "sistema_w_ic95_inf": w_l,
                 "sistema_w_ic95_sup": w_u,
+                "sistema_w_er_pct": ((0.5 * (w_u - w_l)) / w_m * 100.0) if w_m > 0.0 else 0.0,
                 "utilizacion_rho_media": rho_m,
                 "utilizacion_rho_sd": rho_sd,
                 "utilizacion_max_media": float(sub["utilizacion_max_rho"].mean()),
+                "regimen_estabilidad": theo["regime_max_rho"],
                 "lq_total_simulada": float(sub["cola_media_lq"].mean()),
                 "l_total_simulada": float(sub["sistema_medio_l"].mean()),
                 "wq_teorica_mm1_min": theo["weighted_wq_mm1"],
@@ -770,6 +808,7 @@ class BankSimulationEngine:
                 espera_wq_sd=("espera_cola_wq_min", "std"),
                 atencion_w_prom=("atencion_total_w_min", "mean"),
                 atencion_w_sd=("atencion_total_w_min", "std"),
+                prob_wq_mayor_5m_prom=("prob_espera_mayor_5m_pct", "mean"),
                 utilizacion_rho_prom=("utilizacion_rho", "mean"),
                 ocio_pct_prom=("ocio_pct", "mean"),
                 lq_prom=("cola_media_lq", "mean"),
@@ -790,3 +829,223 @@ class BankSimulationEngine:
             "df_summary": df_summary,
             "df_cashier_summary": df_cashier_summary,
         }
+
+    def analyze_warmup_and_steady_state(
+        self,
+        num_replicas: int = 100,
+        base_seed: int = 42,
+        window: int = 15,
+        k_horizon: int = 160,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Identifica el período transitorio (warm-up desde arranque en vacío L(0)=0)
+        mediante promedios móviles transversales y mínima varianza móvil por ventana,
+        comparando estadísticas con transitorio vs. estado estable (Semana 7).
+        """
+        shared_arrivals = {
+            r: self.model.generate_day_arrivals(seed=base_seed + r)
+            for r in range(1, num_replicas + 1)
+        }
+        summary_rows: List[Dict[str, object]] = []
+        curve_e1_rows: List[Dict[str, object]] = []
+
+        for s_idx, (skey, cfg) in enumerate(SCENARIO_DEFINITIONS.items()):
+            theo = self.model.analyze_scenario_theoretically(skey)
+            mat_arr = np.full((num_replicas, k_horizon), np.nan, dtype=float)
+            mat_wq = np.full((num_replicas, k_horizon), np.nan, dtype=float)
+            mat_w = np.full((num_replicas, k_horizon), np.nan, dtype=float)
+            rep_seqs: List[List[Tuple[float, float, float]]] = []
+
+            for r in range(1, num_replicas + 1):
+                arrivals = shared_arrivals[r]
+                r_seed = base_seed * 100 + s_idx * 1000 + r
+                sim_res = self.simulate_single_replica(
+                    scenario_key=skey,
+                    arrivals=arrivals,
+                    routing_seed=r_seed,
+                    routing_mode="random_mm1",
+                )
+                seq = sim_res["waits_by_arrival_order"]
+                rep_seqs.append(seq)
+                lim = min(k_horizon, len(seq))
+                for idx in range(lim):
+                    mat_arr[r - 1, idx] = seq[idx][0]
+                    mat_wq[r - 1, idx] = seq[idx][1]
+                    mat_w[r - 1, idx] = seq[idx][2]
+
+            wq_cross = np.nanmean(mat_wq, axis=0)
+            arr_cross = np.nanmean(mat_arr, axis=0)
+
+            mov_avgs = [
+                float(np.mean(wq_cross[i:i + window]))
+                for i in range(len(wq_cross) - window + 1)
+            ]
+            # Ventana candidata en el primer tercio de la jornada para detectar el fin del arranque vacío
+            cand_indices = []
+            cand_vars = []
+            for i in range(max(0, 20 - window), min(len(mov_avgs) - window + 1, 66 - window + 1)):
+                k_cand = i + window
+                if 20 <= k_cand <= 65:
+                    cand_indices.append(k_cand)
+                    cand_vars.append(float(np.var(mov_avgs[i:i + window])))
+
+            if cand_vars:
+                k_cut = cand_indices[int(np.argmin(cand_vars))]
+            else:
+                k_cut = 30
+
+            t_cut_min = float(arr_cross[k_cut - 1])
+            wq_all_reps = [float(np.mean([x[1] for x in seq])) for seq in rep_seqs if seq]
+            w_all_reps = [float(np.mean([x[2] for x in seq])) for seq in rep_seqs if seq]
+            wq_ss_reps = [
+                float(np.mean([x[1] for x in seq[k_cut - 1:]]))
+                for seq in rep_seqs
+                if len(seq) >= k_cut
+            ]
+            w_ss_reps = [
+                float(np.mean([x[2] for x in seq[k_cut - 1:]]))
+                for seq in rep_seqs
+                if len(seq) >= k_cut
+            ]
+
+            wq_all_m = float(np.mean(wq_all_reps))
+            wq_ss_m = float(np.mean(wq_ss_reps))
+            w_all_m = float(np.mean(w_all_reps))
+            w_ss_m = float(np.mean(w_ss_reps))
+            sesgo_pct = ((wq_ss_m - wq_all_m) / wq_ss_m * 100.0) if wq_ss_m > 0 else 0.0
+
+            summary_rows.append({
+                "escenario": skey,
+                "nombre_corto": cfg["nombre_corto"],
+                "k_corte_clientes": k_cut,
+                "tiempo_corte_aprox_min": t_cut_min,
+                "wq_con_transitorio_min": wq_all_m,
+                "wq_estado_estable_min": wq_ss_m,
+                "wq_teorica_mg1_min": theo["weighted_wq_mg1"],
+                "w_con_transitorio_min": w_all_m,
+                "w_estado_estable_min": w_ss_m,
+                "sesgo_transitorio_wq_pct": sesgo_pct,
+            })
+
+            if skey == "E1_3_Mixtas":
+                for idx in range(k_horizon):
+                    ma_val = (
+                        float(np.mean(wq_cross[max(0, idx - window + 1):idx + 1]))
+                        if idx >= window - 1
+                        else float(np.mean(wq_cross[:idx + 1]))
+                    )
+                    curve_e1_rows.append({
+                        "cliente_idx": idx + 1,
+                        "tiempo_medio_llegada_min": float(arr_cross[idx]),
+                        "wq_media_transversal_min": float(wq_cross[idx]),
+                        "wq_promedio_movil_min": ma_val,
+                        "en_estado_estable": (idx + 1) >= k_cut,
+                    })
+
+        return pd.DataFrame(summary_rows), pd.DataFrame(curve_e1_rows)
+
+    def compute_vv_and_critical_matrix(
+        self,
+        res_10: Dict[str, object],
+        res_mc: Dict[str, object],
+        df_warmup: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Consolida la matriz de Verificación, Calibración y Validación (V&V)
+        y clasifica cada escenario frente a los valores aceptables y críticos del curso.
+        """
+        df_mc_sum = res_mc["df_summary"].set_index("escenario")
+        df_mc_caj = res_mc["df_cashier_summary"]
+        df_warm_idx = df_warmup.set_index("escenario")
+
+        # 1. Verificación exacta de Ley de Little sobre trayectoria completa en cada escenario
+        arrivals_ref = self.model.generate_day_arrivals(seed=42)
+        little_ok_map: Dict[str, bool] = {}
+        for s_idx, skey in enumerate(SCENARIO_DEFINITIONS):
+            sim_ref = self.simulate_single_replica(skey, arrivals_ref, routing_seed=4200 + s_idx * 1000 + 1)
+            max_err = max(
+                abs(c["lq_empirical"] - (c["total_customers"] / c["horizon_effective"]) * c["mean_wait_wq"])
+                for c in sim_ref["cashiers"].values()
+                if c["total_customers"] > 0
+            )
+            little_ok_map[skey] = max_err < 1e-10
+
+        # 2. Calibración: error absoluto medio en puntos porcentuales sobre los 8 perfiles
+        joint_p = self.model.joint_profile_probabilities()
+        df_sub100 = res_mc["df_subtypes"]
+        calib_sub = df_sub100.groupby(["accion", "tipo_usuario"], sort=False)["proporcion_empirica"].mean()
+        calib_err_pct = float(
+            np.mean([
+                abs(float(calib_sub.loc[(act, u)]) - joint_p[(act, u)]) * 100.0
+                for act, u in joint_p
+            ])
+        )
+
+        # 3. Evaluación V&V y criterios críticos por escenario
+        rows: List[Dict[str, object]] = []
+        for skey, cfg in SCENARIO_DEFINITIONS.items():
+            r_sum = df_mc_sum.loc[skey]
+            w_row = df_warm_idx.loc[skey]
+            c_sub = df_mc_caj[df_mc_caj["escenario"] == skey]
+
+            n_mc = int(r_sum["replicas"])
+            wq_sim = float(r_sum["espera_wq_media_min"])
+            wq_ss = float(w_row["wq_estado_estable_min"])
+            wq_mg1 = float(r_sum["wq_teorica_mg1_min"])
+            wq_se = float(r_sum["espera_wq_se_min"])
+            w_sim = float(r_sum["sistema_w_media_min"])
+            peor_wq = float(r_sum["peor_cajero_wq_media_min"])
+            rho_med = float(r_sum["utilizacion_rho_media"]) * 100.0
+            rho_max = float(r_sum["utilizacion_max_media"]) * 100.0
+            prob_gt5_global = float(r_sum["prob_wq_mayor_5m_pct"])
+            prob_gt5_peor = float(c_sub["prob_wq_mayor_5m_prom"].max())
+
+            # Prueba t de Student frente a referencia teórica Pollaczek-Khinchine M/G/1
+            t_stat = (wq_ss - wq_mg1) / wq_se if wq_se > 0 else 0.0
+            df_t = max(1, n_mc - 1)
+            p_val = _betainc(0.5 * df_t, 0.5, df_t / (df_t + t_stat * t_stat))
+
+            if peor_wq > 5.5 or wq_sim > 5.0:
+                crit_wq = "Crítico (>5m)"
+            elif wq_sim <= 3.0 and peor_wq <= 5.0:
+                crit_wq = "Óptimo (<3m)"
+            else:
+                crit_wq = "Aceptable (<=5m)"
+
+            crit_w = "Aceptable (<=8m)" if w_sim <= 8.0 else "Crítico (>8m)"
+            crit_rho = classify_utilization_regime(rho_max / 100.0)
+            crit_prob5 = "Aceptable (<=20%)" if prob_gt5_peor <= 20.0 else "Crítico (>20%)"
+
+            if skey == "E1_3_Mixtas":
+                dictamen = "ÓPTIMO CON 3 CAJAS: cumple metas de espera y P(Wq>5m) sin saturación"
+            elif skey in ("E2_1R_2P", "E3_2R_1P"):
+                dictamen = "NO RECOMENDADO: viola umbrales críticos en servidor cuello de botella"
+            else:
+                dictamen = "REDUNDANTE: mejora marginal en Wq con subutilización elevada (>65% ocio)"
+
+            rows.append({
+                "escenario": skey,
+                "nombre_corto": cfg["nombre_corto"],
+                "verificacion_little_ok": little_ok_map[skey],
+                "calibracion_mae_prop_pct": calib_err_pct,
+                "wq_sim_100_min": wq_sim,
+                "wq_estable_min": wq_ss,
+                "wq_teorica_mg1_min": wq_mg1,
+                "t_stat_vs_mg1": t_stat,
+                "p_valor_vs_mg1": p_val,
+                "wq_er_100_pct": float(r_sum["espera_wq_er_pct"]),
+                "w_sim_100_min": w_sim,
+                "w_er_100_pct": float(r_sum["sistema_w_er_pct"]),
+                "peor_cajero_wq_min": peor_wq,
+                "rho_media_pct": rho_med,
+                "rho_max_pct": rho_max,
+                "prob_wq_mayor_5m_global_pct": prob_gt5_global,
+                "prob_wq_mayor_5m_peor_cajero_pct": prob_gt5_peor,
+                "criterio_wq": crit_wq,
+                "criterio_w": crit_w,
+                "criterio_rho": crit_rho,
+                "criterio_prob_wq_5m": crit_prob5,
+                "dictamen_global": dictamen,
+            })
+
+        return pd.DataFrame(rows)

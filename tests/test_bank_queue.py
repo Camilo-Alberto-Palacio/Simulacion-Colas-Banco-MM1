@@ -186,6 +186,57 @@ class TestBankQueuingModel(unittest.TestCase):
         self.assertEqual(len(df_typ), len(SCENARIO_DEFINITIONS) * len(USER_TYPES))
         self.assertEqual(len(df_prof), len(SCENARIO_DEFINITIONS) * 8)
 
+    def test_relative_error_and_professor_8step_sample_size(self) -> None:
+        """Verifica Error Relativo ER%, fórmula n_nuevo del curso y convergencia en 100 réplicas."""
+        exp10 = self.engine.run_multi_replica_experiment(num_replicas=10, base_seed=42)
+        df_req = exp10["df_sample_size"].set_index("escenario")
+        for skey in SCENARIO_DEFINITIONS:
+            row = df_req.loc[skey]
+            self.assertGreater(float(row["wq_se_min"]), 0.0)
+            expected_er = float(row["wq_semiamp_ic95_min"]) / float(row["wq_media_min"]) * 100.0
+            self.assertAlmostEqual(float(row["wq_er_piloto_pct"]), expected_er, places=8)
+            self.assertGreaterEqual(int(row["n_req_wq_er10_prof"]), 2)
+
+        exp100 = self.engine.run_multi_replica_experiment(num_replicas=100, base_seed=42)
+        s100 = exp100["df_summary"].set_index("escenario")
+        self.assertLess(float(s100.loc["E1_3_Mixtas", "espera_wq_er_pct"]), 10.0)
+        self.assertLess(float(s100.loc["E1_3_Mixtas", "sistema_w_er_pct"]), 6.0)
+        self.assertLess(
+            float(s100.loc["E1_3_Mixtas", "sistema_w_er_pct"]),
+            float(df_req.loc["E1_3_Mixtas", "w_er_piloto_pct"]) / 2.0,
+        )
+        for skey in SCENARIO_DEFINITIONS:
+            self.assertLess(
+                float(s100.loc[skey, "espera_wq_er_pct"]),
+                float(df_req.loc[skey, "wq_er_piloto_pct"]),
+            )
+
+    def test_warmup_and_steady_state_detection(self) -> None:
+        """Verifica eliminación del período transitorio y estado estable en colas iniciadas vacías."""
+        df_warm, df_curve = self.engine.analyze_warmup_and_steady_state(num_replicas=30, base_seed=42, window=15)
+        self.assertEqual(len(df_warm), len(SCENARIO_DEFINITIONS))
+        self.assertEqual(len(df_curve), 160)
+        for _, row in df_warm.iterrows():
+            k_cut = int(row["k_corte_clientes"])
+            self.assertGreaterEqual(k_cut, 20)
+            self.assertLessEqual(k_cut, 65)
+            # Como L(0)=0, el transitorio inicial subestima Wq frente al régimen estacionario
+            self.assertGreaterEqual(float(row["wq_estado_estable_min"]), float(row["wq_con_transitorio_min"]))
+
+    def test_vv_matrix_and_critical_thresholds(self) -> None:
+        """Verifica protocolo V&V, calibración de perfiles y clasificación frente a valores críticos."""
+        exp10 = self.engine.run_multi_replica_experiment(num_replicas=10, base_seed=42)
+        exp50 = self.engine.run_multi_replica_experiment(num_replicas=50, base_seed=42)
+        df_warm, _ = self.engine.analyze_warmup_and_steady_state(num_replicas=50, base_seed=42, window=15)
+        df_vv = self.engine.compute_vv_and_critical_matrix(exp10, exp50, df_warm).set_index("escenario")
+
+        self.assertEqual(len(df_vv), len(SCENARIO_DEFINITIONS))
+        self.assertTrue(bool(df_vv["verificacion_little_ok"].all()))
+        self.assertLess(float(df_vv["calibracion_mae_prop_pct"].max()), 2.0)
+        self.assertTrue(((df_vv["prob_wq_mayor_5m_global_pct"] >= 0.0) & (df_vv["prob_wq_mayor_5m_global_pct"] <= 100.0)).all())
+        self.assertIn("Crítico", str(df_vv.loc["E3_2R_1P", "criterio_wq"]))
+        self.assertNotIn("Crítico", str(df_vv.loc["E1_3_Mixtas", "criterio_wq"]))
+
 
 if __name__ == "__main__":
     unittest.main()

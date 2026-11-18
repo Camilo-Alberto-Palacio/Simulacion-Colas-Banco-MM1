@@ -17,6 +17,7 @@ from .model import (
     ArrivalCustomer,
     BankQueuingModel,
     MM1AnalyticalMetrics,
+    classify_utilization_regime,
 )
 from .simulation import BankSimulationEngine, t_crit_two_sided
 from .visualizations import BankVisualizer
@@ -34,6 +35,7 @@ __all__ = [
     "ArrivalCustomer",
     "BankQueuingModel",
     "MM1AnalyticalMetrics",
+    "classify_utilization_regime",
     "BankSimulationEngine",
     "t_crit_two_sided",
     "BankVisualizer",
