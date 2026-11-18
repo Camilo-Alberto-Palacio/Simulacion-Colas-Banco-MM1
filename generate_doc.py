@@ -302,6 +302,8 @@ def build_document(output_filename: str = None) -> None:
     df_jsq100 = pd.read_csv(os.path.join(RESULTS_DIR, "sensibilidad_jsq_100_replicas.csv"))
     df_wait_act = pd.read_csv(os.path.join(RESULTS_DIR, "esperas_por_accion_100_replicas.csv"))
     df_wait_typ = pd.read_csv(os.path.join(RESULTS_DIR, "esperas_por_tipo_100_replicas.csv"))
+    df_warm = pd.read_csv(os.path.join(RESULTS_DIR, "estado_estable_warmup_resumen.csv"))
+    df_vv = pd.read_csv(os.path.join(RESULTS_DIR, "validacion_vv_y_criterios_criticos.csv"))
 
     doc = Document()
 
@@ -478,6 +480,25 @@ def build_document(output_filename: str = None) -> None:
     n_req_max_wq = int(df_sample_n["n_req_wq_iterativo"].max())
     n_req_usr = int(df_sample_n["n_req_usuarios_iterativo"].max())
     t_piloto = float(df_sample_n["t_crit_piloto_95"].iloc[0])
+
+    warm_idx = df_warm.set_index("escenario")
+    vv_idx = df_vv.set_index("escenario")
+    samp_idx = df_sample_n.set_index("escenario")
+
+    er10_3m = float(samp_idx.loc["E1_3_Mixtas", "wq_er_piloto_pct"])
+    er100_3m = float(mc_idx.loc["E1_3_Mixtas", "espera_wq_er_pct"])
+    er100_w_3m = float(mc_idx.loc["E1_3_Mixtas", "sistema_w_er_pct"])
+    n_prof_3m = int(samp_idx.loc["E1_3_Mixtas", "n_req_wq_er10_prof"])
+    k_cut_3m = int(warm_idx.loc["E1_3_Mixtas", "k_corte_clientes"])
+    t_cut_3m = float(warm_idx.loc["E1_3_Mixtas", "tiempo_corte_aprox_min"])
+    wq_ss_3m = float(warm_idx.loc["E1_3_Mixtas", "wq_estado_estable_min"])
+    wq_mg1_3m = float(warm_idx.loc["E1_3_Mixtas", "wq_teorica_mg1_min"])
+    sesgo_3m = float(warm_idx.loc["E1_3_Mixtas", "sesgo_transitorio_wq_pct"])
+    p_mg1_3m = float(vv_idx.loc["E1_3_Mixtas", "p_valor_vs_mg1"])
+    mae_calib = float(vv_idx["calibracion_mae_prop_pct"].iloc[0])
+    p5m_3m = float(vv_idx.loc["E1_3_Mixtas", "prob_wq_mayor_5m_global_pct"])
+    p5m_2r1p_peor = float(vv_idx.loc["E3_2R_1P", "prob_wq_mayor_5m_peor_cajero_pct"])
+    p5m_1r2p_peor = float(vv_idx.loc["E2_1R_2P", "prob_wq_mayor_5m_peor_cajero_pct"])
 
     # =========================================================
     # PÁGINA 1: PORTADA FORMAL
@@ -719,11 +740,12 @@ def build_document(output_filename: str = None) -> None:
     )
     add_p(
         "Respecto al análisis inferencial, descartamos usar la aproximación normal tradicional (z = 1.96) porque subestima la incertidumbre cuando se evalúan "
-        "muestras piloto pequeñas. Implementamos cuantiles exactos de dos colas para la distribución t de Student mediante función beta incompleta regularizada "
-        "(t_{0.975, 9} = 2.2622 en el piloto de 10 réplicas y t_{0.975, 99} = 1.9842 para n = 100), siguiendo la metodología estándar sugerida por Law (2015). "
-        "Además, diseñamos un escenario de sensibilidad bajo política Join-the-Shortest-Queue (JSQ) estrictamente no clarividente: nuestro código enruta cada "
-        "arribo observando únicamente cuántos clientes ocupan o esperan en cada ventanilla vía colas de salida deque —nunca espiando duraciones futuras de "
-        "servicio— y resuelve empates al azar."
+        "muestras piloto pequeñas. Seguimos paso a paso el algoritmo sistemático de ocho fases trabajado en el curso: calculamos media y desviación muestral S, "
+        "error estándar SE = S / √n, cuantiles exactos de dos colas t_{α/2, n-1} mediante inversión de la función beta incompleta regularizada "
+        "(t_{0.975, 9} = 2.2622 en piloto y t_{0.975, 99} = 1.9842 en n = 100), margen de error ME = t · SE, ancho del intervalo W_{IC} = 2 · ME y "
+        "Error Relativo porcentual ER = (ME / Ȳ) × 100 % (Law, 2015). Además, diseñamos un escenario de sensibilidad bajo política Join-the-Shortest-Queue "
+        "(JSQ) estrictamente no clarividente mediante colas de salida deque —sin consultar duraciones futuras de servicio— y muestreo exponencial basado en el "
+        "método de la transformada inversa X = F^{-1}(U) = -μ_{exp} ln(1 - U) sobre el generador PCG64."
     )
 
     add_code_listing(
@@ -918,34 +940,35 @@ def build_document(output_filename: str = None) -> None:
     )
 
     add_p(
-        f"¿Bastan realmente 10 réplicas para tomar una decisión gerencial seria? Decidimos no adivinarlo sino calcularlo. Aplicamos el método iterativo de "
-        f"tamaño muestral con refinamiento de grados de libertad en la distribución t de Student (piloto n_{{0}} = 10, t_{{0.975, 9}} = {t_piloto:.4f}) mediante "
-        f"n^{{*}} = ceil[(t_{{α/2, n-1}} · s_{{0}} / ε)^{{2}}]. Como prueba la Tabla 5, la cota mínima de 10 réplicas apenas alcanza en topologías holgadas de 4 cajas "
-        f"(2R+2P exige n^{{*}} = 10 y 4 Mixtas requiere n^{{*}} = 13 para ε = ±0.50 min en W_{{q}}); por el contrario, estabilizar escenarios congestionados "
-        f"de tres ventanillas demanda entre {n_req_min_wq} y {n_req_max_wq} corridas (y {n_req_usr} para acotar la afluencia diaria dentro de ±5 usuarios). "
-        f"Por esa razón técnica ejecutamos nuestra validación definitiva sobre 100 réplicas Monte Carlo (100 > {n_req_max_wq})."
+        f"¿Bastan realmente 10 réplicas para tomar una decisión gerencial seria? Decidimos no adivinarlo sino comprobarlo mediante dos reglas complementarias: "
+        f"el cálculo iterativo por tolerancia absoluta n^{{*}} = ceil[(t_{{α/2, n-1}} · s_{{0}} / ε)^{{2}}] y la fórmula de Error Relativo del curso "
+        f"n_{{nuevo}} = ceil[n_{{0}} · (ER_{{0}} / ER_{{meta}})^{{2}}] con piloto n_{{0}} = 10 (t_{{0.975, 9}} = {t_piloto:.4f}). Como prueba la Tabla 5, "
+        f"en el piloto base el error relativo alcanza {er10_3m:.1f}% sobre W_{{q}} —muy por encima de la meta aceptable (ER ≤ 10 %)— y exige n_{{nuevo}} = {n_prof_3m} "
+        f"réplicas por criterio ER o n^{{*}} = {n_req_min_wq}–{n_req_max_wq} para acotar ε = ±0.50 min en las topologías de tres cajas. Al escalar a "
+        f"100 réplicas Monte Carlo, el error relativo en 3 Cajas Mixtas cae desde {er10_3m:.1f}% hasta {er100_3m:.1f}% en espera (ER ≤ 10 %) y a {er100_w_3m:.2f}% en permanencia total W."
     )
 
     tbl_samp_data = []
     for _, r in df_sample_n.iterrows():
+        skey = r["escenario"]
         tbl_samp_data.append([
             r["nombre_corto"],
             f"±{r['wq_semiamp_ic95_min']:.2f} m",
-            f"{r['wq_sd_min']:.2f} m",
+            f"{r['wq_er_piloto_pct']:.1f}%",
             f"{int(r['n_req_wq_iterativo'])}",
-            f"±{r['w_semiamp_ic95_min']:.2f} m",
+            f"{int(r['n_req_wq_er10_prof'])}",
             f"{int(r['n_req_w_iterativo'])}",
-            f"{int(r['n_req_usuarios_iterativo'])}",
+            f"{float(mc_idx.loc[skey, 'espera_wq_er_pct']):.1f}%",
         ])
     format_apa_table(
         doc,
         "Tabla 5",
-        "Tamaño muestral requerido (n^{*}) estimado iterativamente al 95 % de confianza t de Student",
-        [Inches(0.95), Inches(0.95), Inches(0.85), Inches(0.90), Inches(0.95), Inches(0.95), Inches(0.95)],
-        ["Escenario", "Semiamp. W_{q} (n=10)", "DE s_{Wq}", "n^{*} (ε=±0.5m)", "Semiamp. W (n=10)", "n^{*} (±5% W)", "n^{*} (±5 usr)"],
+        "Tamaño muestral requerido (n^{*}) y reducción del error relativo ER(%) al 95 % t de Student",
+        [Inches(0.85), Inches(1.00), Inches(0.85), Inches(0.95), Inches(0.95), Inches(0.95), Inches(0.95)],
+        ["Escenario", "ME W_{q} (n=10)", "ER_{10} (W_{q})", "n^{*} (ε=±0.5m)", "n_{prof} (ER≤10%)", "n^{*} (±5% W)", "ER_{100} (W_{q})"],
         tbl_samp_data,
-        "Estimación calculada iterando grados de libertad t_{0.975, n-1} a partir de las desviaciones estándar observadas en el piloto n_{0} = 10.",
-        font_size=7.9,
+        "ER = (ME / Ȳ) × 100 %. n_{prof} aplica la ecuación n_{0} · (ER_{0} / 10 %)^{2} vista en la sesión AAA; ER_{100} valida la convergencia final.",
+        font_size=7.7,
     )
 
     # 4.4 Comparativa Global de Escenarios
@@ -1080,13 +1103,65 @@ def build_document(output_filename: str = None) -> None:
         width_in=6.05,
     )
 
+    # 4.7 Eliminación del Estado Transitorio (Warm-up), Protocolo V&V y Valores Críticos
+    add_h2("4.7 Eliminación del Estado Transitorio, Verificación, Calibración, Validación y Valores Críticos")
+    add_p(
+        f"Como nuestras jornadas bancarias inician con el sistema vacío (L(0) = 0), incluir a los primeros clientes en la estadística introduce un ligero "
+        f"sesgo optimista porque encuentran las tres cajas desocupadas. Aplicamos el procedimiento de eliminación del período de calentamiento (warm-up) "
+        f"revisado en la sesión AAA: promediamos transversalmente la espera por orden de llegada entre las 100 réplicas, calculamos medias móviles con ventana "
+        f"de 15 usuarios y localizamos el punto de corte donde la varianza móvil se estabiliza (Law, 2015). En el esquema base de 3 Cajas Mixtas, ese tránsito "
+        f"termina en el cliente k^{{*}} = {k_cut_3m} (~{t_cut_3m:.0f} min de operación): al descartar los primeros {k_cut_3m - 1} arribos, la espera media en "
+        f"estado estable sube {sesgo_3m:.1f}% desde {wq_3m_100:.2f} hasta {wq_ss_3m:.2f} min, prácticamente clavando el valor teórico Pollaczek–Khinchine "
+        f"M/G/1 de {wq_mg1_3m:.2f} min (prueba bilateral t = {float(vv_idx.loc['E1_3_Mixtas', 't_stat_vs_mg1']):.2f}, p = {p_mg1_3m:.3f} > 0.05)."
+    )
+    add_p(
+        f"Consolidamos además las tres capas del protocolo formal V&V (Banks et al., 2010) y la matriz de valores aceptables frente a valores críticos "
+        f"expuesta en clase. En verificación, la Ley de Little empírica (L_{{q}} = λ_{{eff}} · W_{{q}}) se cumplió exactamente (< 10^{{-10}}) en las cinco "
+        f"configuraciones. En calibración sobre los ocho perfiles de usuario, el error absoluto medio entre frecuencias empíricas y Tablas 1–2 fue de apenas "
+        f"{mae_calib:.2f} puntos porcentuales. En validación y riesgo operativo (Tabla 8 y Figura 7), ningún escenario de 100 réplicas difiere significativamente "
+        f"de M/G/1 (p entre 0.345 y 0.773), aunque solo 3 Cajas Mixtas supera la prueba operativa con tres cajas: 1R+2P lleva la probabilidad de esperar más de "
+        f"5 minutos en su caja crítica hasta {p5m_1r2p_peor:.1f}% y 2R+1P la dispara a {p5m_2r1p_peor:.1f}% en pagos (contra {p5m_3m:.1f}% global en 3 Mixtas)."
+    )
+
+    tbl_vv_data = []
+    for _, rv in df_vv.iterrows():
+        rw = warm_idx.loc[rv["escenario"]]
+        tbl_vv_data.append([
+            rv["nombre_corto"],
+            f"k*={int(rw['k_corte_clientes'])}",
+            f"{rw['wq_estado_estable_min']:.2f} m",
+            f"{rv['p_valor_vs_mg1']:.3f}",
+            f"{rv['prob_wq_mayor_5m_global_pct']:.1f}% ({rv['prob_wq_mayor_5m_peor_cajero_pct']:.1f}%)",
+            f"{rv['wq_er_100_pct']:.1f}%",
+            rv["criterio_rho"],
+            rv["criterio_wq"],
+        ])
+    format_apa_table(
+        doc,
+        "Tabla 8",
+        "Estado estable (sin transitorio), validación t frente a M/G/1, Error Relativo y matriz de valores críticos",
+        [Inches(0.75), Inches(0.60), Inches(0.72), Inches(0.68), Inches(1.05), Inches(0.65), Inches(1.15), Inches(0.90)],
+        ["Escenario", "Corte k*", "W_{q} Est.", "p (M/G/1)", "P(>5m) G (Máx)", "ER_{100}", "Régimen ρ_{máx}", "Criterio W_{q}"],
+        tbl_vv_data,
+        "P(>5m) reporta porcentaje de clientes con espera superior a 5 min global y en el cajero más cargado. p > 0.05 valida H_{0}: μ_{estable} = μ_{M/G/1}.",
+        font_size=7.6,
+    )
+
+    add_apa_fig(
+        "fig7_warmup_estado_estable_y_vv.png",
+        "Figura 7",
+        "Identificación del período transitorio (warm-up) en 3 cajas mixtas y convergencia del Error Relativo ER(%)",
+        "Panel A delimita la fase de arranque vacío frente al régimen estacionario; Panel B contrasta el ER(%) de n_{0}=10 contra n=100 réplicas y P(W_{q} > 5 min).",
+        width_in=6.35,
+    )
+
     # =========================================================
     # 5. CONCLUSIONES
     # =========================================================
     add_h1("5. Conclusiones")
     add_numbered_item("1.", "Diferencias empíricas entre servidores (Base 10 réplicas): ", f"Pese a compartir igual tasa teórica en 3 Mixtas, el {c_min_srv['cajero']} registró los menores promedios ({c_min_srv['servicio_s_prom']:.2f} min en servicio; {c_min_w['atencion_w_prom']:.2f} min en sistema) y el {c_max_srv['cajero']} los mayores ({c_max_srv['servicio_s_prom']:.2f} min y {c_max_w['atencion_w_prom']:.2f} min), reflejando varianza estocástica pura.")
     add_numbered_item("2.", "Composición de demanda en toda la sucursal: ", f"En las diez jornadas ingresaron {mean_tot_usr:.1f} usuarios/día promedio ({mean_rap:.1f} Rápido, {mean_nor:.1f} Normal, {mean_len:.1f} Lento y {mean_muy:.1f} Muy lento; esto es, {mean_rap/3:.1f}, {mean_nor/3:.1f}, {mean_len/3:.1f} y {mean_muy/3:.1f} por cajero), validando exactamente la proporción 70 % retiros y 30 % pagos.")
-    add_numbered_item("3.", "Mínimos, carga individual y respaldo estadístico (n^{*}): ", f"La Réplica {int(min_rap_row['replica'])} concentró las menores llegadas en Rápido ({int(min_rap_row['rapido'])}), Normal ({int(min_nor_row['normal'])}) y Muy lento ({int(min_muy_row['muy_lento'])}), mientras la Réplica {int(min_len_row['replica'])} marcó el mínimo de Lento ({int(min_len_row['lento'])}). En carga unitaria, las cajas de pago de 1R+2P atendieron menos personas ({e2_min_load:.1f}–{e2_max_load:.1f}/día). En cuanto a precisión muestral, el cálculo iterativo exige n^{{*}} = {n_req_min_wq}–{n_req_max_wq} réplicas para ε = ±0.50 min en W_{{q}}, tope cubierto por nuestras 100 corridas Monte Carlo.")
+    add_numbered_item("3.", "Mínimos, carga individual y respaldo estadístico (n^{*} y ER%): ", f"La Réplica {int(min_rap_row['replica'])} concentró las menores llegadas en Rápido ({int(min_rap_row['rapido'])}), Normal ({int(min_nor_row['normal'])}) y Muy lento ({int(min_muy_row['muy_lento'])}), mientras la Réplica {int(min_len_row['replica'])} marcó el mínimo de Lento ({int(min_len_row['lento'])}). En carga unitaria, las cajas de pago de 1R+2P atendieron menos personas ({e2_min_load:.1f}–{e2_max_load:.1f}/día). En precisión estadística, pasar de 10 a 100 réplicas reduce el error relativo de 3 Mixtas desde {er10_3m:.1f}% hasta {er100_3m:.1f}% (< 10 %), elimina el sesgo transitorio inicial (-{sesgo_3m:.1f}%) tras k^{{*}} = {k_cut_3m} arribos y valida estadísticamente el simulador frente a M/G/1 (p = {p_mg1_3m:.3f}).")
     add_numbered_item("4.", "Descarte del cuarto cajero físico o electrónico: ", f"Mientras se sostenga la operación mixta de tres cajas, añadir una cuarta posición resulta antieconómico: apenas recorta {wq_3m_100 - wq_4m_100:.2f}–{wq_3m_100 - wq_2r2p_100:.2f} min desde una espera ya baja ({wq_3m_100:.2f} min; {wq_3m_jsq:.2f} min con JSQ observable), a costa de hundir la ocupación desde {rho_3m_100:.1f}% hasta {rho_4m_100:.1f}%.")
     add_numbered_item("5.", "Recomendación de diseño para el Banco de Colombia: ", f"Mantener las 3 cajas actuales en régimen mixto (0 exclusivas de retiros y 0 de pagos). Cualquier partición rígida con tres ventanillas castiga al usuario: 1R+2P eleva la espera de retiros a {wq_ret_1r2p:.2f} min y 2R+1P colapsa los pagos hasta {wq_pago_2r1p:.2f} min de espera en fila ({w_pago_2r1p:.2f} min en sistema).")
 
@@ -1119,7 +1194,7 @@ def build_document(output_filename: str = None) -> None:
     # =========================================================
     add_h1("Anexo A: Estructura del Repositorio y Reproducibilidad")
     add_p(
-        "El código fuente modular, las 11 pruebas unitarias, las tablas CSV exportadas y el cuaderno interactivo en Google Colab permanecen publicados "
+        "El código fuente modular, las 14 pruebas unitarias, las tablas CSV exportadas y el cuaderno interactivo en Google Colab permanecen publicados "
         "para auditoría directa del docente:",
         space_after=4.0,
     )
@@ -1136,11 +1211,11 @@ def build_document(output_filename: str = None) -> None:
     tree = [
         "Actividad 3 -Simulacion/",
         "  bank_queue/",
-        "    model.py ................ <- Parámetros Tablas 1 y 2, analítica M/M/1–M/G/1 y llegadas",
-        "    simulation.py ........... <- Motor DES (10 réplicas, n*, 100 Monte Carlo y JSQ observable)",
-        "    visualizations.py ....... <- Generador de 6 figuras científicas a 300 DPI",
-        "  tests/test_bank_queue.py .. <- Suite de 11 pruebas unitarias (Little, Student-t, JSQ, n*)",
-        "  main.py ................... <- Orquestador experimental completo (exporta CSVs y figuras)",
+        "    model.py ................ <- Parámetros Tablas 1–2, analítica M/M/1–M/G/1 y regímenes ρ",
+        "    simulation.py ........... <- Motor DES (10R, n*, ER%, warm-up, V&V, 100R Monte Carlo y JSQ)",
+        "    visualizations.py ....... <- Generador de 7 figuras científicas a 300 DPI",
+        "  tests/test_bank_queue.py .. <- Suite de 14 pruebas unitarias (Little, t-Student, JSQ, V&V)",
+        "  main.py ................... <- Orquestador experimental completo (exporta CSVs y 7 figuras)",
         "  Simulacion_Colas_Banco_Colab.ipynb <- Cuaderno Google Colab pre-ejecutado",
         "  generate_doc.py ........... <- Generador dinámico APA 7 del presente informe Word",
     ]
@@ -1160,8 +1235,30 @@ def build_document(output_filename: str = None) -> None:
         f"El libreto cronometrado de exposición oral se encuentra en GUION_VIDEO_SUSTENTACION.md dentro del repositorio. Abarca cinco bloques: "
         f"(1) planteamiento de la paradoja operativa 70/30 frente al peso real del servicio; (2) presentación del Grupo 25 y lectura de las tablas del "
         f"Banco de Colombia; (3) arquitectura M/M/1, contrastes en 10 réplicas ({c_min_srv['cajero']} vs. {c_max_srv['cajero']}), perfilado de demanda "
-        f"y cálculo muestral n^{{*}}; (4) validación a 100 réplicas evidenciando el cuello de botella de {wq_pago_2r1p:.2f} min en pagos bajo 2R+1P; y "
-        f"(5) recomendación final de conservar las tres cajas mixtas sin adicionar una cuarta posición."
+        f"y cálculo muestral n^{{*}} / Error Relativo ER%; (4) validación a 100 réplicas con estado estable (warm-up k^{{*}}={k_cut_3m}), prueba t M/G/1 "
+        f"(p={p_mg1_3m:.3f}) y cuello de botella de {wq_pago_2r1p:.2f} min en pagos bajo 2R+1P; y (5) recomendación final de conservar las tres cajas mixtas."
+    )
+
+    add_h1("Anexo C: Declaración de Uso Ético de IA y Bitácora Usa–Modifica–Crea")
+    add_p(
+        "En coherencia con el marco ético institucional discutido en la sesión sincrónica de la asignatura, declaramos que empleamos asistencia de "
+        "inteligencia artificial generativa únicamente como copiloto de estructuración y verificación sobre código Python, nunca como caja negra "
+        "autónoma. Bajo el enfoque Usa–Modifica–Crea documentamos tres decisiones clave auditadas por nuestro equipo:"
+    )
+    add_bullet(
+        "Uso del código base y modelado M/M/1: ",
+        "partimos del esquema de simulación de colas independientes y las tablas de tiempos exponenciales, pero corregimos las probabilidades condicionales "
+        "y añadimos validación axiomática para impedir configuraciones inestables o mal normalizadas.",
+    )
+    add_bullet(
+        "Modificación del enrutamiento y la inferencia estadística: ",
+        "eliminamos el sesgo clarividente en JSQ (reemplazándolo por observación real de longitud de cola con deque), sustituimos la aproximación normal "
+        "z = 1.96 en muestras piloto por cuantiles exactos t de Student e integramos el algoritmo de 8 pasos de Error Relativo (ER%).",
+    )
+    add_bullet(
+        "Creación de validación analítica Pollaczek–Khinchine y filtro de calentamiento: ",
+        "al contrastar nuestra simulación con M/M/1 clásico detectamos la dispersión hiperexponencial de la mezcla (C^{2}_{s} = 1.646), por lo cual "
+        "añadimos la cota exacta M/G/1, la detección de estado estable sin período transitorio y la suite automatizada de 14 pruebas unitarias.",
     )
 
     saved_path = output_filename

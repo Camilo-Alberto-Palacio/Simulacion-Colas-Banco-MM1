@@ -155,18 +155,32 @@ class MM1AnalyticalMetrics:
     """Métricas analíticas exactas de estado estable para un servidor M/M/1 (y referencia M/G/1)."""
 
     role: str
-    lam: float           # Tasa de llegadas (clientes/min)
-    mu: float            # Tasa de servicio (clientes/min)
-    rho: float           # Factor de utilización (lambda / mu)
-    p0: float            # Probabilidad de sistema vacío (1 - rho)
-    mean_service: float  # E[S] = 1/mu (min)
-    mean_s2: float       # Segundo momento E[S^2] (min^2)
-    l_system: float      # Número promedio en el sistema (L)
-    lq_queue: float      # Número promedio en la cola (Lq)
-    w_system: float      # Tiempo promedio en el sistema (W)
-    wq_queue: float      # Tiempo promedio de espera en cola M/M/1 (Wq)
-    wq_mg1: float        # Tiempo promedio de espera Pollaczek-Khinchine M/G/1 (min)
-    stable: bool         # True si rho < 1
+    lam: float                     # Tasa de llegadas (clientes/min)
+    mu: float                      # Tasa de servicio (clientes/min)
+    rho: float                     # Factor de utilización (lambda / mu)
+    p0: float                      # Probabilidad de sistema vacío (1 - rho)
+    mean_service: float            # E[S] = 1/mu (min)
+    mean_s2: float                 # Segundo momento E[S^2] (min^2)
+    l_system: float                # Número promedio en el sistema (L)
+    lq_queue: float                # Número promedio en la cola (Lq)
+    w_system: float                # Tiempo promedio en el sistema (W)
+    wq_queue: float                # Tiempo promedio de espera en cola M/M/1 (Wq)
+    wq_mg1: float                  # Tiempo promedio de espera Pollaczek-Khinchine M/G/1 (min)
+    stable: bool                   # True si rho < 1
+    prob_wq_gt_5min: float = 0.0   # P(Wq > 5 min) en M/M/1 = rho * exp(-(mu - lam) * 5)
+
+
+def classify_utilization_regime(rho: float) -> str:
+    """Clasifica el factor de utilización rho según los umbrales operativos del curso."""
+    if rho < 0.50:
+        return "Subutilizado (<50%)"
+    if rho < 0.70:
+        return "Moderado-Óptimo (50%-70%)"
+    if rho < 0.85:
+        return "Alta Utilización (70%-85%)"
+    if rho < 1.00:
+        return "Crítico / Saturación (85%-100%)"
+    return "Inestable (>=100%)"
 
 
 class BankQueuingModel:
@@ -291,6 +305,7 @@ class BankQueuingModel:
             w_sys = 1.0 / (mu - lam)
             wq = rho / (mu * (1.0 - rho))
             wq_mg1 = (lam * mean_s2) / (2.0 * (1.0 - rho))
+            prob_wq_gt_5min = float(rho * np.exp(-(mu - lam) * 5.0))
         else:
             p0 = 0.0
             l_sys = float("inf")
@@ -298,6 +313,7 @@ class BankQueuingModel:
             w_sys = float("inf")
             wq = float("inf")
             wq_mg1 = float("inf")
+            prob_wq_gt_5min = 1.0
 
         return MM1AnalyticalMetrics(
             role=role,
@@ -313,6 +329,7 @@ class BankQueuingModel:
             wq_queue=wq,
             wq_mg1=wq_mg1,
             stable=stable,
+            prob_wq_gt_5min=prob_wq_gt_5min,
         )
 
     def analyze_scenario_theoretically(self, scenario_key: str) -> Dict[str, object]:
@@ -334,6 +351,7 @@ class BankQueuingModel:
         weighted_wq_mg1 = sum((m.lam / total_lam) * m.wq_mg1 for _, m in cashier_metrics)
         weighted_w_mm1 = sum((m.lam / total_lam) * m.w_system for _, m in cashier_metrics)
         weighted_s = sum((m.lam / total_lam) * m.mean_service for _, m in cashier_metrics)
+        weighted_prob_gt_5 = sum((m.lam / total_lam) * m.prob_wq_gt_5min for _, m in cashier_metrics)
         total_lq = sum(m.lq_queue for _, m in cashier_metrics)
         total_l = sum(m.l_system for _, m in cashier_metrics)
         mean_rho = float(np.mean([m.rho for _, m in cashier_metrics]))
@@ -351,10 +369,12 @@ class BankQueuingModel:
             "weighted_wq_mm1": weighted_wq_mm1,
             "weighted_wq_mg1": weighted_wq_mg1,
             "weighted_w_mm1": weighted_w_mm1,
+            "weighted_prob_wq_gt_5min": weighted_prob_gt_5,
             "total_lq_mm1": total_lq,
             "total_l_mm1": total_l,
             "mean_rho": mean_rho,
             "max_rho": max_rho,
+            "regime_max_rho": classify_utilization_regime(max_rho),
             "max_wq_mm1": max_wq_mm1,
             "cashiers": cashier_metrics,
         }

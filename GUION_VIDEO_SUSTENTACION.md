@@ -47,10 +47,10 @@
 
 ---
 
-> **[1:10 – 1:55] FASE 4: COMPARATIVA DE ESCENARIOS Y MONTE CARLO (45 segundos)**  
-> *(En pantalla: `results/fig4_comparativa_espera_escenarios.png` y `results/fig6_balance_carga_cajeros_escenarios.png`)*  
+> **[1:10 – 1:55] FASE 4: COMPARATIVA DE ESCENARIOS, MONTE CARLO Y V&V (45 segundos)**  
+> *(En pantalla: `results/fig4_comparativa_espera_escenarios.png` y `results/fig7_warmup_estado_estable_y_vv.png`)*  
 >  
-> *"Con base en las 10 réplicas piloto calculamos un tamaño muestral de 50 a 68 réplicas para acotar la espera a ±0.5 minutos al 95% t de Student, por lo que validamos todos los criterios en **100 réplicas Monte Carlo**. Los datos explican la paradoja inicial: aunque los retiros son el 70% del flujo, su servicio dura solo **2.34 minutos**, mientras que un pago tarda **5.20 minutos** en promedio. Por eso, en **2 Retiros + 1 Pago**, el único cajero de pagos se convierte en un cuello de botella con **9.08 minutos** de espera promedio (9.16 min en el peor promedio diario); y en **1 Retiro + 2 Pagos**, el cajero de retiros sube al **67.4% de ocupación**, espera **5.91 minutos** y eleva el promedio global a **4.94 minutos**."*
+> *"Aplicamos además el algoritmo de Error Relativo del curso: con 10 réplicas el error relativo en 3 Mixtas era 33.3%, por lo que validamos todo en **100 réplicas Monte Carlo**, reduciendo el error al **8.8%** e identificando el estado estable tras los primeros **26 clientes** (3.35 min, concordando estadísticamente con Pollaczek-Khinchine M/G/1, p = 0.773). Los datos explican la paradoja inicial: aunque los retiros son el 70% del flujo, su servicio dura solo **2.34 minutos**, mientras que un pago tarda **5.20 minutos** en promedio. Por eso, en **2 Retiros + 1 Pago**, el único cajero de pagos se convierte en cuello de botella con **9.08 minutos** de espera (y **43.6%** de usuarios esperando más de 5 minutos); y en **1 Retiro + 2 Pagos**, retiros sube al **67.4%** de ocupación y **5.91 minutos** de espera."*
 
 ---
 
@@ -64,4 +64,4 @@
 > **[2:20 – 2:30] FASE 6: CIERRE Y REPRODUCIBILIDAD (10 segundos)**  
 > *(En pantalla: Repositorio en GitHub y Google Colab abierto)*  
 >  
-> *"El informe completo, la suite de 11 pruebas unitarias en Python, el cuaderno interactivo en Google Colab y todas las gráficas reproducibles quedan disponibles en nuestro repositorio de GitHub. ¡Muchas gracias!"*
+> *"El informe completo en normas APA 7, nuestra bitácora ética Usa-Modifica-Crea, la suite de 14 pruebas unitarias en Python, el cuaderno en Google Colab y las 7 gráficas reproducibles quedan disponibles en nuestro repositorio de GitHub. ¡Muchas gracias!"*

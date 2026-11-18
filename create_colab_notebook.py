@@ -263,16 +263,19 @@ def simulate_scenario_replica(cajeros_cfg, arrivals, routing_seed: int, routing_
             "mean_wq": float(np.mean(ws)) if ws else 0.0,
             "mean_w": float(np.mean(syss)) if syss else 0.0,
             "rho": float(np.sum(ss) / heff),
+            "prob_gt5": float(np.mean(np.asarray(ws) > 5.0) * 100.0) if ws else 0.0,
             "counts_u": cu,
         }
     return {
         "total_usuarios": len(arrivals), "atendidos_turno": completed_turn,
         "counts_u": counts_u, "counts_in_turn": counts_in_turn,
         "mean_wq": float(np.mean(all_w)), "mean_s": float(np.mean(all_s)), "mean_w": float(np.mean(all_sys)),
+        "prob_gt5": float(np.mean(np.asarray(all_w) > 5.0) * 100.0),
         "wq_retiro": float(np.mean(w_by_act["Retiro"])), "wq_pago": float(np.mean(w_by_act["Pago"])),
         "wq_rapido": float(np.mean(w_by_typ["Rápido"])), "wq_normal": float(np.mean(w_by_typ["Normal"])),
         "wq_lento": float(np.mean(w_by_typ["Lento"])), "wq_muy_lento": float(np.mean(w_by_typ["Muy lento"])),
         "peor_wq": max(v["mean_wq"] for v in cashier_stats.values()),
+        "peor_prob_gt5": max(v["prob_gt5"] for v in cashier_stats.values()),
         "rho_med": float(np.mean([v["rho"] for v in cashier_stats.values()])),
         "rho_max": float(np.max([v["rho"] for v in cashier_stats.values()])),
         "cashiers": cashier_stats,
@@ -296,6 +299,7 @@ def run_experiment(num_replicas: int = 10, base_seed: int = 42, routing_mode: st
                 "Wq_Rápido": res["wq_rapido"], "Wq_Normal": res["wq_normal"],
                 "Wq_Lento": res["wq_lento"], "Wq_Muy_lento": res["wq_muy_lento"],
                 "S": res["mean_s"], "W": res["mean_w"], "Peor_Wq": res["peor_wq"],
+                "Prob_gt5_Global": res["prob_gt5"], "Prob_gt5_Peor": res["peor_prob_gt5"],
                 "rho_med": res["rho_med"], "rho_max": res["rho_max"],
             })
             for cname, cv in res["cashiers"].items():
@@ -444,12 +448,114 @@ plt.tight_layout()
 plt.show()"""
     ),
     md_cell(
-        """## 5. Conclusiones Ejecutivas para el Banco de Colombia
+        """## 5. Diagnóstico AAA / Semana 7: Error Relativo ($ER\\%$), Estado Estable (*Warm-up*), Protocolo V&V y Valores Críticos
 
-1. **Cajero con menor y mayor atención (Base 3 Mixtas, 10 réplicas):** El **Cajero 2** registró el menor tiempo medio (`S = 2.882 min`, `W = 6.217 min`), mientras que el **Cajero 1** registró el mayor (`S = 3.226 min`, `W = 7.490 min`), debido a la varianza natural de las colas M/M/1 independientes.
-2. **Suficiencia de réplicas ($n^*$):** Con $\\varepsilon = \\pm 0.50\\text{ min}$ en $W_q$ al 95 % *t* de Student, las configuraciones de 3 cajas requieren entre `30` (`1R+2P`), `50` (`3 Mixtas`) y `68` (`2R+1P`) réplicas, razón por la cual las `100` réplicas Monte Carlo garantizan plena convergencia estadística.
-3. **Necesidad de un 4.º cajero físico o cajero electrónico:** **No es necesario** ampliar a 4 posiciones si se mantienen 3 cajas mixtas: en todos los criterios de espera (`Wq_Global = 3.24 min`, `Retiro = 3.29 min`, `Pago = 3.15 min`, perfiles `2.92–3.79 min`, `JSQ = 0.74 min`), el servicio opera holgadamente bajo `5.0 min` con apenas `43.7%` de utilización (`56.3%` de ocio). Un 4.º cajero desploma la ocupación a `32.9%` (`67.1%` ocio) por un ahorro marginal de `1.24 min`.
-4. **Asignación óptima de cajas exclusivas (Pagos vs. Retiros):** La configuración óptima con 3 cajeros es **3 cajas mixtas (`0 exclusivos de retiro` / `0 exclusivos de pago`)** por el efecto *pooling*. Bajo especialización rígida de 3 cajas, `1R + 2P` sobrecarga retiros (`5.91 min`; global `4.94 min`) y `2R + 1P` dispara la espera del único cajero de pagos hasta **`9.08 min`** (`W = 14.25 min` en sistema; peor promedio diario de réplica `9.16 min`)."""
+Complementamos el análisis con las herramientas de estimación estadística y validación del curso:
+1. **Algoritmo de 8 pasos ($ER\\%$):** comparación del Error Relativo porcentual $ER = (ME / \\bar{Y}) \\times 100\\%$ entre $n_0=10$ y $n=100$ réplicas y cálculo de $n_{\\text{prof}} = \\lceil n_0 (ER_0 / 10\\%)^2 \\rceil$.
+2. **Eliminación del período transitorio (*warm-up*):** promedio móvil ($\\text{ventana} = 15$) y mínima varianza local sobre la espera por orden de llegada en `E1: 3 Mixtas`.
+3. **Validación *t* de Student frente a Pollaczek–Khinchine $M/G/1$ y matriz de valores críticos** ($P(W_q > 5\\text{ min})$ y regímenes de utilización $\\rho$)."""
+    ),
+    code_cell(
+        """# 1. Error Relativo ER% (n0=10 vs n=100) y Matriz V&V + Valores Críticos
+vv_rows = []
+for skey, (short_n, cfg) in SCENARIOS.items():
+    sub10 = df_rep10[df_rep10["escenario"] == skey]
+    sub100 = df_rep100[df_rep100["escenario"] == skey]
+    m10, _, l10, u10 = ci95_student_t(sub10["Wq"])
+    er10 = (0.5 * (u10 - l10)) / m10 * 100.0
+    n_prof = math.ceil(10 * (er10 / 10.0) ** 2)
+
+    m100, sd100, l100, u100 = ci95_student_t(sub100["Wq"])
+    er100 = (0.5 * (u100 - l100)) / m100 * 100.0
+    wm100, _, wl100, wu100 = ci95_student_t(sub100["W"])
+    er_w100 = (0.5 * (wu100 - wl100)) / wm100 * 100.0
+
+    _, mg1_wq = theoretical_scenario_wq(cfg)
+    se100 = sd100 / np.sqrt(100)
+    vv_rows.append({
+        "Escenario": short_n,
+        "ER10_Wq_pct": round(er10, 1),
+        "n_prof_ER10": n_prof,
+        "ER100_Wq_pct": round(er100, 1),
+        "ER100_W_pct": round(er_w100, 2),
+        "Wq_100": round(m100, 2),
+        "MG1_Teor": round(mg1_wq, 2),
+        "Prob_gt5m_Global_pct": round(float(sub100["Prob_gt5_Global"].mean()), 1),
+        "Prob_gt5m_Peor_pct": round(float(sub100["Prob_gt5_Peor"].mean()), 1),
+        "Peor_Wq": round(float(sub100["Peor_Wq"].mean()), 2),
+    })
+
+df_vv_colab = pd.DataFrame(vv_rows).set_index("Escenario")
+print("=== ALGORITMO DE ERROR RELATIVO ER% Y MATRIZ DE VALORES CRÍTICOS ===")
+display(df_vv_colab)
+
+# 2. Detección de calentamiento (warm-up) en 3 Cajas Mixtas (100 réplicas)
+k_hor = 160
+shared_100 = {r: generate_day_arrivals(42 + r) for r in range(1, 101)}
+cfg_e1 = SCENARIOS["E1_3_Mixtas"][1]
+mat_wq = np.full((100, k_hor), np.nan)
+seq_all_reps = []
+for r in range(1, 101):
+    arr = shared_100[r]
+    rng = np.random.default_rng(4200 + r)
+    free_t = [0.0, 0.0, 0.0]
+    waits_seq = []
+    for t_arr, act, ut, srv in arr:
+        c = int(rng.integers(0, 3))
+        wt = max(0.0, free_t[c] - t_arr)
+        free_t[c] = max(t_arr, free_t[c]) + srv
+        waits_seq.append(wt)
+    seq_all_reps.append(waits_seq)
+    for k_i in range(min(k_hor, len(waits_seq))):
+        mat_wq[r - 1, k_i] = waits_seq[k_i]
+
+wq_cross = np.nanmean(mat_wq, axis=0)
+win = 15
+ma_vals = np.array([float(np.mean(wq_cross[max(0, i - win + 1):i + 1])) for i in range(k_hor)])
+mov_full = [float(np.mean(wq_cross[i:i + win])) for i in range(k_hor - win + 1)]
+cand_k = [i + win for i in range(max(0, 20 - win), min(len(mov_full) - win + 1, 66 - win + 1)) if 20 <= i + win <= 65]
+cand_v = [float(np.var(mov_full[k - win:k])) for k in cand_k]
+k_cut = cand_k[int(np.argmin(cand_v))]
+
+wq_trans = float(np.mean([np.mean(s) for s in seq_all_reps]))
+wq_est = float(np.mean([np.mean(s[k_cut - 1:]) for s in seq_all_reps if len(s) >= k_cut]))
+se_est = float(np.std([np.mean(s[k_cut - 1:]) for s in seq_all_reps if len(s) >= k_cut], ddof=1) / np.sqrt(100))
+mg1_e1 = theoretical_scenario_wq(cfg_e1)[1]
+t_val = (wq_est - mg1_e1) / se_est
+p_mg1 = _betainc(0.5 * 99, 0.5, 99.0 / (99.0 + t_val * t_val))
+print(f"Warm-up 3 Mixtas: k* = {k_cut} clientes | Wq con transitorio = {wq_trans:.2f} m -> Estado estable = {wq_est:.2f} m (M/G/1 = {mg1_e1:.2f} m, p = {p_mg1:.3f})")
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.8, 4.9))
+ks = np.arange(1, k_hor + 1)
+ax1.axvspan(1, k_cut, color="#FEF3C7", alpha=0.55, label=f"Transitorio L(0)=0 (1–{k_cut})")
+ax1.axvspan(k_cut, k_hor, color="#DCFCE7", alpha=0.35, label="Estado estable")
+ax1.plot(ks, wq_cross, color="#94A3B8", linewidth=1.0, label="Wq transversal")
+ax1.plot(ks, ma_vals, color="#0F172A", linewidth=2.1, label="Media móvil (w=15)")
+ax1.axvline(k_cut, color="#DC2626", linestyle="--", linewidth=1.5, label=f"Corte k*={k_cut}")
+ax1.axhline(wq_est, color="#0F766E", linestyle="-.", linewidth=1.5, label=f"Estable={wq_est:.2f}m")
+ax1.set_title("Eliminación del Estado Transitorio (3 Cajas Mixtas)")
+ax1.set_xlabel("Orden de llegada k"); ax1.set_ylabel("Wq (min)")
+ax1.set_ylim(0, max(wq_cross) * 1.45); ax1.legend(fontsize=7.8, ncol=2)
+
+x = np.arange(len(df_vv_colab))
+ax2.bar(x - 0.17, df_vv_colab["ER10_Wq_pct"], width=0.34, color="#F59E0B", label="ER% Piloto n0=10")
+ax2.bar(x + 0.17, df_vv_colab["ER100_Wq_pct"], width=0.34, color="#2563EB", label="ER% Monte Carlo n=100")
+ax2.axhline(10.0, color="#0F766E", linestyle="--", label="Meta ER ≤ 10%")
+ax2.set_xticks(x); ax2.set_xticklabels(df_vv_colab.index, fontweight="bold")
+ax2.set_title("Reducción del Error Relativo ER(Wq) %")
+ax2.set_ylabel("Error Relativo (%)"); ax2.legend(fontsize=8.2)
+plt.tight_layout(); plt.show()"""
+    ),
+    md_cell(
+        """## 6. Conclusiones Ejecutivas y Uso Ético de IA (Usa–Modifica–Crea)"""
+    ),
+    md_cell(
+        """1. **Cajero con menor y mayor atención (Base 3 Mixtas, 10 réplicas):** El **Cajero 2** registró el menor tiempo medio (`S = 2.882 min`, `W = 6.217 min`), mientras que el **Cajero 1** registró el mayor (`S = 3.226 min`, `W = 7.490 min`), debido a la varianza natural de las colas M/M/1 independientes.
+2. **Suficiencia de réplicas ($n^*$ y Error Relativo $ER\\%$):** Con $n_0=10$, el Error Relativo sobre $W_q$ alcanza `33.3%` en `3 Mixtas` (`n_prof = 111` para $ER \\le 10\\%$). Al simular `100` réplicas, $ER(W_q)$ baja a **`8.8%`** ($< 10\\%$) y $ER(W)$ a **`5.03%`**.
+3. **Estado estable y validación V&V:** Eliminando el período transitorio ($k^* = 26$ arribos), la espera estacionaria de `3 Mixtas` converge a **`3.35 min`**, concordando estadísticamente con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, $p = 0.773 > 0.05$).
+4. **Necesidad de un 4.º cajero físico o electrónico:** **No es necesario** ampliar a 4 posiciones manteniendo `3 cajas mixtas` (`Wq_Global = 3.24 min`, `ER = 8.8%`, `JSQ = 0.74 min`, uso `43.7%`). Un 4.º cajero desploma la ocupación a `32.9%` (`67.1%` ocio) por un ahorro de apenas `1.24 min`.
+5. **Asignación óptima de cajas exclusivas (Pagos vs. Retiros):** **3 cajas mixtas (`0 exclusivos de retiro` / `0 exclusivos de pago`)**. Bajo especialización rígida, `1R + 2P` sobrecarga retiros (`5.91 min`; `37.7%` con espera $> 5\\text{ min}$) y `2R + 1P` colapsa el único cajero de pagos hasta **`9.08 min`** (`43.6%` de clientes esperan $> 5\\text{ min}$).
+6. **Bitácora ética Usa–Modifica–Crea:** El equipo utilizó asistencia computacional verificable auditando cada supuesto: corrección de JSQ no clarividente, uso de cuantiles exactos *t* de Student, extensión analítica hiperexponencial $M/G/1$, filtro de calentamiento y verificación automática mediante 14 pruebas unitarias."""
     ),
 ]
 

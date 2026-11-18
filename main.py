@@ -202,8 +202,38 @@ def main() -> None:
             f"ρ_max={r['utilizacion_max_media']*100:4.1f}%"
         )
 
-    # 4. Generación de 6 Figuras Científicas a 300 DPI
-    print("\n[4/5] Generando 6 Figuras Científicas en Alta Resolución (300 DPI)...")
+    # 4. Análisis de Warm-up / Estado Estable, Verificación, Calibración y Validación (Semana 7)
+    print("\n[4/6] Analizando Estado Estable (Warm-up), Error Relativo ER% y Matriz V&V...")
+    df_warmup, df_curve_e1 = engine.analyze_warmup_and_steady_state(num_replicas=100, base_seed=42, window=15)
+    df_vv = engine.compute_vv_and_critical_matrix(res_10, res_mc, df_warmup)
+
+    df_warmup.to_csv("results/estado_estable_warmup_resumen.csv", index=False, encoding="utf-8-sig")
+    df_curve_e1.to_csv("results/curva_warmup_3mixtas.csv", index=False, encoding="utf-8-sig")
+    df_vv.to_csv("results/validacion_vv_y_criterios_criticos.csv", index=False, encoding="utf-8-sig")
+
+    print("\n  [Error Relativo ER%] Algoritmo de 8 Pasos (Piloto n0=10 -> Monte Carlo n=100):")
+    s10_samp = df_sample_n.set_index("escenario")
+    for _, r in df_mc_sum.iterrows():
+        skey = r["escenario"]
+        sr = s10_samp.loc[skey]
+        print(
+            f"      - {r['nombre_corto']:10s} | ER_10(Wq)={sr['wq_er_piloto_pct']:5.1f}% "
+            f"(n_prof≤10%={int(sr['n_req_wq_er10_prof']):2d}) -> ER_100(Wq)={r['espera_wq_er_pct']:4.1f}% | "
+            f"ER_100(W)={r['sistema_w_er_pct']:4.1f}%"
+        )
+
+    print("\n  [Estado Estable y V&V] Warm-up, Prueba t vs M/G/1 y Valores Críticos:")
+    for _, r in df_vv.iterrows():
+        w_r = df_warmup[df_warmup["escenario"] == r["escenario"]].iloc[0]
+        print(
+            f"      - {r['nombre_corto']:10s} | k*={int(w_r['k_corte_clientes']):2d} "
+            f"(Wq_trans={w_r['wq_con_transitorio_min']:.2f} -> Wq_est={w_r['wq_estado_estable_min']:.2f} m) | "
+            f"p_M/G/1={r['p_valor_vs_mg1']:.3f} | P(Wq>5m)={r['prob_wq_mayor_5m_global_pct']:4.1f}% "
+            f"(peor caj={r['prob_wq_mayor_5m_peor_cajero_pct']:4.1f}%) | {r['criterio_wq']}"
+        )
+
+    # 5. Generación de 7 Figuras Científicas a 300 DPI
+    print("\n[5/6] Generando 7 Figuras Científicas en Alta Resolución (300 DPI)...")
     figs = [
         viz.plot_queue_architecture(model),
         viz.plot_base_cashier_performance(res_10["df_cashiers"], df_caj10),
@@ -211,13 +241,14 @@ def main() -> None:
         viz.plot_scenarios_wait_comparison(df_mc_sum),
         viz.plot_theory_and_montecarlo_validation(df_mc_sum, df_jsq_sum, df_mc_rep),
         viz.plot_per_cashier_load_and_wait_across_scenarios(df_mc_caj, num_replicas=100),
+        viz.plot_warmup_and_vv_diagnostics(df_curve_e1, df_warmup, df_sample_n, df_mc_sum),
     ]
     for f in figs:
         print(f"      [+] Figura guardada: {f}")
 
-    # 5. Confirmación Final
-    print("\n[5/5] Pipeline experimental completado exitosamente.")
-    print("  • Todos los CSVs y gráficas quedaron en 'results/'.")
+    # 6. Confirmación Final
+    print("\n[6/6] Pipeline experimental completado exitosamente.")
+    print("  • Todos los CSVs y las 7 gráficas quedaron en 'results/'.")
     print("=" * 84)
 
 

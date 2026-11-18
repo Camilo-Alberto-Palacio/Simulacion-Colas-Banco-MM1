@@ -2,7 +2,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Camilo-Alberto-Palacio/Simulacion-Colas-Banco-MM1/blob/main/Simulacion_Colas_Banco_Colab.ipynb)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-11%2F11%20Passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-14%2F14%20Passing-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Institution](https://img.shields.io/badge/IU%20Digital%20de%20Antioquia-Grupo%2025-1E3A8A)
 
@@ -58,17 +58,17 @@ El **Banco de Colombia** dispone de **3 cajas** (sin cajeros electrónicos) para
 .
 ├── bank_queue/                                       # Paquete modular principal en Python
 │   ├── __init__.py                                   # Exportación pública
-│   ├── model.py                                      # Tablas 1 y 2, analítica M/M/1-M/G/1 y generador PCG64
-│   ├── simulation.py                                 # Motor DES (10 réplicas, n*, 100 Monte Carlo, JSQ observable, t-Student)
-│   └── visualizations.py                             # Generador de 6 figuras científicas a 300 DPI
+│   ├── model.py                                      # Tablas 1 y 2, analítica M/M/1-M/G/1, P(Wq>5m) y regímenes ρ
+│   ├── simulation.py                                 # Motor DES (10R, n*, ER%, warm-up, V&V, 100R Monte Carlo y JSQ)
+│   └── visualizations.py                             # Generador de 7 figuras científicas a 300 DPI
 ├── tests/
 │   ├── __init__.py
-│   └── test_bank_queue.py                            # 11 pruebas unitarias (Momentos, Little, t-Student, JSQ, n*)
-├── results/                                          # CSVs auditables y 6 figuras PNG (300 DPI)
+│   └── test_bank_queue.py                            # 14 pruebas unitarias (Momentos, Little, t-Student, ER%, warm-up, V&V)
+├── results/                                          # CSVs auditables y 7 figuras PNG (300 DPI)
 ├── main.py                                           # Script maestro experimental
 ├── create_colab_notebook.py                          # Generador y ejecutor del cuaderno Colab
 ├── Simulacion_Colas_Banco_Colab.ipynb                # Cuaderno Colab autocontenido y pre-ejecutado
-├── generate_doc.py                                   # Generador dinámico del informe Word (.docx)
+├── generate_doc.py                                   # Generador dinámico APA 7 del informe Word (.docx)
 ├── Evidencia de Aprendizaje 3 - Módulo 2. Actividad didáctica 2-M3 - Solución Problema Bancario.docx
 ├── GUION_VIDEO_SUSTENTACION.md                       # Guion minuto a minuto (2:30 min)
 ├── requirements.txt
@@ -88,10 +88,10 @@ Haz clic en el botón **Open in Colab** al inicio de este documento y ejecuta `E
 # 1. Instalar dependencias
 pip install -r requirements.txt
 
-# 2. Ejecutar las 11 pruebas unitarias de validación matemática
+# 2. Ejecutar las 14 pruebas unitarias de validación matemática y V&V
 python -m unittest discover -s tests -v
 
-# 3. Ejecutar la simulación completa (10 réplicas + 100 Monte Carlo + CSVs + 6 figuras)
+# 3. Ejecutar la simulación completa (10R + 100 Monte Carlo + Warm-up + V&V + 7 figuras)
 python main.py
 
 # 4. Regenerar informe Word (.docx) y cuaderno Google Colab pre-ejecutado
@@ -126,6 +126,13 @@ python create_colab_notebook.py
 
 * **Decisión sobre nuevo cajero físico o electrónico (Punto 4):** **No es necesario** incorporar un 4.º cajero ni un cajero electrónico manteniendo **3 cajas mixtas** (`3.24 min` global, `3.29 m` retiros, `3.15 m` pagos y `56.3%` de capacidad libre; un 4.º cajero hunde la ocupación a `32.9%`).
 * **Decisión sobre cajas exclusivas (Punto 5):** Conservar **3 cajas mixtas (`0` exclusivas de retiro / `0` exclusivas de pago)**. Si se obligara a especializar con 3 cajas, `2R + 1P` dispara la espera media de pagos a `9.08 min` (peor réplica `9.16 min`, sistema `14.25 min`), mientras `1R + 2P` sobrecarga retiros (`5.91 min`) y eleva la espera global a `4.94 min`.
+
+### 3. Validación Semana 7 / Clase AAA: Error Relativo ($ER\%$), Estado Estable y Valores Críticos
+* **Algoritmo de 8 pasos ($ER\%$):** Con $n_0=10$, el error relativo sobre $W_q$ es `33.3%` en `3 Mixtas` (`n_prof = 111` para $ER \le 10\%$). Con `100` réplicas Monte Carlo, `3 Mixtas` reduce su error a **`8.8%`** en $W_q$ y **`5.03%`** en $W$.
+* **Eliminación del período transitorio (*warm-up*):** Al arrancar el banco vacío ($L(0)=0$), la media móvil (ventana `15`) detecta estabilización tras $k^* = 26$ clientes (`~61 min` en `3 Mixtas`). Descartando el transitorio, $W_q^{\text{estable}} = 3.35\text{ min}$ (vs. `3.24 min` con transitorio, sesgo `-3.1%`), coincidiendo con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, prueba *t* bilateral $p = 0.773 > 0.05$).
+* **Matriz V&V y Valores Críticos:** Verificación de Ley de Little (`< 10^{-10}`), calibración de perfiles (`MAE = 0.19` p.p.) y probabilidad de espera prolongada $P(W_q > 5\text{ min})$ de **`20.9%`** global en `3 Mixtas`, frente a **`37.7%`** en retiros de `1R+2P` y **`43.6%`** en pagos de `2R+1P`.
+
+![Diagnóstico Warm-up y Error Relativo](results/fig7_warmup_estado_estable_y_vv.png)
 
 ---
 

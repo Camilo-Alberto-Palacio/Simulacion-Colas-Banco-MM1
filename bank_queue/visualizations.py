@@ -584,3 +584,105 @@ class BankVisualizer:
         plt.savefig(out_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
         return out_path
+
+    def plot_warmup_and_vv_diagnostics(
+        self,
+        df_curve_e1: pd.DataFrame,
+        df_warmup_summary: pd.DataFrame,
+        df_sample_n: pd.DataFrame,
+        df_mc_summary: pd.DataFrame,
+        filename: str = "fig7_warmup_estado_estable_y_vv.png",
+    ) -> str:
+        """
+        Figura 7 (Semana 7): Diagnóstico de eliminación del período transitorio (warm-up)
+        y convergencia del Error Relativo porcentual ER% junto a P(Wq > 5 min).
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14.0, 5.5), dpi=300)
+
+        # Panel A: Curva transitorio vs estado estable para Escenario Base (3 Mixtas)
+        row_e1 = df_warmup_summary[df_warmup_summary["escenario"] == "E1_3_Mixtas"].iloc[0]
+        k_cut = int(row_e1["k_corte_clientes"])
+        t_cut = float(row_e1["tiempo_corte_aprox_min"])
+        wq_all = float(row_e1["wq_con_transitorio_min"])
+        wq_ss = float(row_e1["wq_estado_estable_min"])
+        wq_mg1 = float(row_e1["wq_teorica_mg1_min"])
+
+        k_vals = df_curve_e1["cliente_idx"].values
+        wq_raw = df_curve_e1["wq_media_transversal_min"].values
+        wq_ma = df_curve_e1["wq_promedio_movil_min"].values
+
+        ax1.axvspan(1, k_cut, color="#FEF3C7", alpha=0.55, label=f"Fase transitoria L(0)=0 (1–{k_cut} cli)")
+        ax1.axvspan(k_cut, k_vals.max(), color="#DCFCE7", alpha=0.35, label="Régimen de estado estable")
+        ax1.plot(k_vals, wq_raw, color="#94A3B8", linewidth=1.1, alpha=0.85, label="Media transversal Wq(k)")
+        ax1.plot(k_vals, wq_ma, color=self.palette["navy"], linewidth=2.2, label="Promedio móvil (ventana = 15)")
+        ax1.axvline(k_cut, color=self.palette["red"], linestyle="--", linewidth=1.6,
+                    label=f"Punto de corte k*={k_cut} (~{t_cut:.0f} min)")
+        ax1.axhline(wq_all, color="#D97706", linestyle=":", linewidth=1.5,
+                    label=f"Con transitorio = {wq_all:.2f} min")
+        ax1.axhline(wq_ss, color=self.palette["teal"], linestyle="-.", linewidth=1.6,
+                    label=f"Estado estable = {wq_ss:.2f} min (M/G/1: {wq_mg1:.2f})")
+
+        y_max_a = max(float(np.max(wq_raw)), wq_mg1, wq_ss)
+        ax1.set_xlim(1, int(k_vals.max()))
+        ax1.set_ylim(0.0, y_max_a * 1.48)
+        ax1.set_xlabel("Orden de llegada del cliente k (promedio sobre 100 réplicas)", fontsize=9.8)
+        ax1.set_ylabel("Tiempo medio de espera en cola Wq (min)", fontsize=9.8)
+        ax1.set_title(
+            "A. Identificación y Eliminación del Estado Transitorio (3 Cajas Mixtas)",
+            fontsize=10.5, fontweight="bold", color="#0F172A",
+        )
+        ax1.grid(True, linestyle=":", alpha=0.6)
+        ax1.legend(loc="upper left", fontsize=7.6, frameon=True, ncol=2)
+
+        # Panel B: Reducción del Error Relativo ER% (n0=10 vs n=100) y P(Wq > 5 min)
+        labels = df_mc_summary["nombre_corto"].tolist()
+        x = np.arange(len(labels))
+        w = 0.34
+        s_idx = df_sample_n.set_index("escenario")
+        m_idx = df_mc_summary.set_index("escenario")
+        scens = df_mc_summary["escenario"].tolist()
+
+        er_10 = np.array([float(s_idx.loc[s, "wq_er_piloto_pct"]) for s in scens])
+        er_100 = np.array([float(m_idx.loc[s, "espera_wq_er_pct"]) for s in scens])
+        p_gt5 = np.array([float(m_idx.loc[s, "prob_wq_mayor_5m_pct"]) for s in scens])
+
+        b10 = ax2.bar(x - w / 2, er_10, width=w, color="#F59E0B", alpha=0.88, label="Piloto n₀ = 10 réplicas")
+        b100 = ax2.bar(x + w / 2, er_100, width=w, color=self.palette["blue"], alpha=0.90, label="Monte Carlo n = 100 réplicas")
+
+        ax2.axhline(10.0, color=self.palette["teal"], linestyle="--", linewidth=1.3, zorder=1, label="Meta curso ER ≤ 10%")
+        ax2.axhline(5.0, color="#64748B", linestyle=":", linewidth=1.2, zorder=1, label="Precisión estricta ER ≤ 5%")
+
+        for bar in b10:
+            h = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2, h + 0.7, f"{h:.1f}%",
+                ha="center", va="bottom", fontsize=7.8, fontweight="bold", color="#92400E",
+                bbox=dict(boxstyle="round,pad=0.12", facecolor="white", edgecolor="none", alpha=0.88),
+                zorder=5,
+            )
+        for idx_b, bar in enumerate(b100):
+            h = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2, h + 1.0,
+                f"{h:.1f}%\n(P>5m:\n{p_gt5[idx_b]:.0f}%)",
+                ha="center", va="bottom", fontsize=7.0, fontweight="bold", color="#1E3A8A",
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="white", edgecolor="none", alpha=0.92),
+                zorder=5,
+            )
+
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(labels, fontsize=9.0, fontweight="bold")
+        ax2.set_ylabel("Error Relativo ER(Wq) = (ME / Ȳ) × 100 (%)", fontsize=9.8)
+        ax2.set_title(
+            "B. Reducción del Error Relativo (n₀=10 → n=100) y P(Wq > 5 min)",
+            fontsize=10.5, fontweight="bold", color="#0F172A",
+        )
+        ax2.set_ylim(0.0, float(np.max(er_10)) * 1.28)
+        ax2.grid(axis="y", linestyle=":", alpha=0.6)
+        ax2.legend(loc="upper right", fontsize=7.8, frameon=True)
+
+        out_path = os.path.join(self.output_dir, filename)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return out_path
