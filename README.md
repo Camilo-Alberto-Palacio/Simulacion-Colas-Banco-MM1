@@ -129,7 +129,7 @@ python create_colab_notebook.py
 
 ### 3. Validación Semana 7 / Clase AAA: Error Relativo ($ER\%$), Estado Estable y Valores Críticos
 * **Algoritmo de 8 pasos ($ER\%$):** Con $n_0=10$, el error relativo sobre $W_q$ es `33.3%` en `3 Mixtas` (`n_prof = 111` para $ER \le 10\%$). Con `100` réplicas Monte Carlo, `3 Mixtas` reduce su error a **`8.8%`** en $W_q$ y **`5.03%`** en $W$.
-* **Eliminación del período transitorio (*warm-up*):** Al arrancar el banco vacío ($L(0)=0$), la media móvil (ventana `15`) detecta estabilización tras $k^* = 26$ clientes (`~61 min` en `3 Mixtas`). Descartando el transitorio, $W_q^{\text{estable}} = 3.35\text{ min}$ (vs. `3.24 min` con transitorio, sesgo `-3.1%`), coincidiendo con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, prueba *t* bilateral $p = 0.794 > 0.05$).
+* **Eliminación del período transitorio (*warm-up*):** Al arrancar el banco vacío ($L(0)=0$), la media móvil (ventana `15`) detecta estabilización tras $k^* = 26$ clientes (`~61 min` en `3 Mixtas`). Descartando el transitorio, $W_q^{\text{estable}} = 3.35\text{ min}$ (vs. `3.24 min` con transitorio; el transitorio subestima la espera en `3.1%`), coincidiendo con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, prueba *t* bilateral $p = 0.794 > 0.05$).
 * **Matriz V&V y Valores Críticos:** Verificación de Ley de Little (`< 10^{-10}`), calibración de perfiles (`MAE = 0.19` p.p.) y probabilidad de espera prolongada $P(W_q > 5\text{ min})$ de **`20.9%`** global (**`21.3%`** en cajero pico bajo cola aleatoria $M/M/1$, mitigable con enrutamiento observable JSQ `0.74 min`), frente a **`37.7%`** en retiros de `1R+2P` y **`43.6%`** en pagos de `2R+1P`.
 
 ![Diagnóstico Warm-up y Error Relativo](results/fig7_warmup_estado_estable_y_vv.png)
