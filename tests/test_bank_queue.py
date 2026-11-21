@@ -222,6 +222,8 @@ class TestBankQueuingModel(unittest.TestCase):
             self.assertLessEqual(k_cut, 65)
             # Como L(0)=0, el transitorio inicial subestima Wq frente al régimen estacionario
             self.assertGreaterEqual(float(row["wq_estado_estable_min"]), float(row["wq_con_transitorio_min"]))
+            self.assertGreater(float(row["wq_estado_estable_se_min"]), 0.0)
+            self.assertEqual(int(row["n_replicas_estado_estable"]), 30)
 
     def test_vv_matrix_and_critical_thresholds(self) -> None:
         """Verifica protocolo V&V, calibración de perfiles y clasificación frente a valores críticos."""
@@ -229,6 +231,8 @@ class TestBankQueuingModel(unittest.TestCase):
         exp50 = self.engine.run_multi_replica_experiment(num_replicas=50, base_seed=42)
         df_warm, _ = self.engine.analyze_warmup_and_steady_state(num_replicas=50, base_seed=42, window=15)
         df_vv = self.engine.compute_vv_and_critical_matrix(exp10, exp50, df_warm).set_index("escenario")
+        df_sum50 = exp50["df_summary"].set_index("escenario")
+        df_w = df_warm.set_index("escenario")
 
         self.assertEqual(len(df_vv), len(SCENARIO_DEFINITIONS))
         self.assertTrue(bool(df_vv["verificacion_little_ok"].all()))
@@ -236,6 +240,16 @@ class TestBankQueuingModel(unittest.TestCase):
         self.assertTrue(((df_vv["prob_wq_mayor_5m_global_pct"] >= 0.0) & (df_vv["prob_wq_mayor_5m_global_pct"] <= 100.0)).all())
         self.assertIn("Crítico", str(df_vv.loc["E3_2R_1P", "criterio_wq"]))
         self.assertNotIn("Crítico", str(df_vv.loc["E1_3_Mixtas", "criterio_wq"]))
+
+        # Coherencia entre resumen MC y matriz V&V (régimen simulado, t-test estacionario y dictamen)
+        for skey in df_vv.index:
+            self.assertEqual(str(df_sum50.loc[skey, "regimen_estabilidad"]), str(df_vv.loc[skey, "criterio_rho"]))
+            expected_t = (
+                float(df_w.loc[skey, "wq_estado_estable_min"]) - float(df_sum50.loc[skey, "wq_teorica_mg1_min"])
+            ) / float(df_w.loc[skey, "wq_estado_estable_se_min"])
+            self.assertAlmostEqual(float(df_vv.loc[skey, "t_stat_vs_mg1"]), round(expected_t, 4), places=4)
+            if "Crítico" in str(df_vv.loc[skey, "criterio_prob_wq_5m"]):
+                self.assertNotIn("cumple metas de espera y P(Wq>5m)", str(df_vv.loc[skey, "dictamen_global"]))
 
 
 if __name__ == "__main__":

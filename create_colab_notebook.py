@@ -307,6 +307,7 @@ def run_experiment(num_replicas: int = 10, base_seed: int = 42, routing_mode: st
                     "escenario": skey, "nombre": short_name, "replica": r,
                     "cajero": cname, "rol": cv["rol"], "usuarios": cv["usuarios"],
                     "S": cv["mean_s"], "Wq": cv["mean_wq"], "W": cv["mean_w"], "rho": cv["rho"],
+                    "prob_gt5": cv["prob_gt5"],
                     "Rápido": cv["counts_u"]["Rápido"], "Normal": cv["counts_u"]["Normal"],
                     "Lento": cv["counts_u"]["Lento"], "Muy lento": cv["counts_u"]["Muy lento"],
                 })
@@ -472,6 +473,8 @@ for skey, (short_n, cfg) in SCENARIOS.items():
 
     _, mg1_wq = theoretical_scenario_wq(cfg)
     se100 = sd100 / np.sqrt(100)
+    caj100_s = df_caj100[df_caj100["escenario"] == skey]
+    prob_gt5_peor = float(caj100_s.groupby("cajero")["prob_gt5"].mean().max())
     vv_rows.append({
         "Escenario": short_n,
         "ER10_Wq_pct": round(er10, 1),
@@ -481,7 +484,7 @@ for skey, (short_n, cfg) in SCENARIOS.items():
         "Wq_100": round(m100, 2),
         "MG1_Teor": round(mg1_wq, 2),
         "Prob_gt5m_Global_pct": round(float(sub100["Prob_gt5_Global"].mean()), 1),
-        "Prob_gt5m_Peor_pct": round(float(sub100["Prob_gt5_Peor"].mean()), 1),
+        "Prob_gt5m_Peor_pct": round(prob_gt5_peor, 1),
         "Peor_Wq": round(float(sub100["Peor_Wq"].mean()), 2),
     })
 
@@ -552,7 +555,7 @@ plt.tight_layout(); plt.show()"""
     md_cell(
         """1. **Cajero con menor y mayor atención (Base 3 Mixtas, 10 réplicas):** El **Cajero 2** registró el menor tiempo medio (`S = 2.882 min`, `W = 6.217 min`), mientras que el **Cajero 1** registró el mayor (`S = 3.226 min`, `W = 7.490 min`), debido a la varianza natural de las colas M/M/1 independientes.
 2. **Suficiencia de réplicas ($n^*$ y Error Relativo $ER\\%$):** Con $n_0=10$, el Error Relativo sobre $W_q$ alcanza `33.3%` en `3 Mixtas` (`n_prof = 111` para $ER \\le 10\\%$). Al simular `100` réplicas, $ER(W_q)$ baja a **`8.8%`** ($< 10\\%$) y $ER(W)$ a **`5.03%`**.
-3. **Estado estable y validación V&V:** Eliminando el período transitorio ($k^* = 26$ arribos), la espera estacionaria de `3 Mixtas` converge a **`3.35 min`**, concordando estadísticamente con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, $p = 0.773 > 0.05$).
+3. **Estado estable y validación V&V:** Eliminando el período transitorio ($k^* = 26$ arribos), la espera estacionaria de `3 Mixtas` converge a **`3.35 min`**, concordando estadísticamente con Pollaczek–Khinchine $M/G/1$ (`3.39 min`, $p = 0.794 > 0.05$). En riesgo operativo bajo cola aleatoria $M/M/1$, `3 Mixtas` presenta $P(W_q > 5\\text{ min}) = 20.9\\%$ global (`21.3%` en cajero pico), brecha mitigable con selección observable JSQ (`Wq = 0.74 min`).
 4. **Necesidad de un 4.º cajero físico o electrónico:** **No es necesario** ampliar a 4 posiciones manteniendo `3 cajas mixtas` (`Wq_Global = 3.24 min`, `ER = 8.8%`, `JSQ = 0.74 min`, uso `43.7%`). Un 4.º cajero desploma la ocupación a `32.9%` (`67.1%` ocio) por un ahorro de apenas `1.24 min`.
 5. **Asignación óptima de cajas exclusivas (Pagos vs. Retiros):** **3 cajas mixtas (`0 exclusivos de retiro` / `0 exclusivos de pago`)**. Bajo especialización rígida, `1R + 2P` sobrecarga retiros (`5.91 min`; `37.7%` con espera $> 5\\text{ min}$) y `2R + 1P` colapsa el único cajero de pagos hasta **`9.08 min`** (`43.6%` de clientes esperan $> 5\\text{ min}$).
 6. **Bitácora ética Usa–Modifica–Crea:** El equipo utilizó asistencia computacional verificable auditando cada supuesto: corrección de JSQ no clarividente, uso de cuantiles exactos *t* de Student, extensión analítica hiperexponencial $M/G/1$, filtro de calentamiento y verificación automática mediante 14 pruebas unitarias."""
