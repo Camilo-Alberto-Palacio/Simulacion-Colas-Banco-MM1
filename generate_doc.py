@@ -497,8 +497,11 @@ def build_document(output_filename: str = None) -> None:
     p_mg1_3m = float(vv_idx.loc["E1_3_Mixtas", "p_valor_vs_mg1"])
     mae_calib = float(vv_idx["calibracion_mae_prop_pct"].iloc[0])
     p5m_3m = float(vv_idx.loc["E1_3_Mixtas", "prob_wq_mayor_5m_global_pct"])
+    p5m_3m_peor = float(vv_idx.loc["E1_3_Mixtas", "prob_wq_mayor_5m_peor_cajero_pct"])
     p5m_2r1p_peor = float(vv_idx.loc["E3_2R_1P", "prob_wq_mayor_5m_peor_cajero_pct"])
     p5m_1r2p_peor = float(vv_idx.loc["E2_1R_2P", "prob_wq_mayor_5m_peor_cajero_pct"])
+    p_min_mg1 = float(vv_idx["p_valor_vs_mg1"].min())
+    p_max_mg1 = float(vv_idx["p_valor_vs_mg1"].max())
 
     # =========================================================
     # PÁGINA 1: PORTADA FORMAL
@@ -1119,8 +1122,10 @@ def build_document(output_filename: str = None) -> None:
         f"expuesta en clase. En verificación, la Ley de Little empírica (L_{{q}} = λ_{{eff}} · W_{{q}}) se cumplió exactamente (< 10^{{-10}}) en las cinco "
         f"configuraciones. En calibración sobre los ocho perfiles de usuario, el error absoluto medio entre frecuencias empíricas y Tablas 1–2 fue de apenas "
         f"{mae_calib:.2f} puntos porcentuales. En validación y riesgo operativo (Tabla 8 y Figura 7), ningún escenario de 100 réplicas difiere significativamente "
-        f"de M/G/1 (p entre 0.345 y 0.773), aunque solo 3 Cajas Mixtas supera la prueba operativa con tres cajas: 1R+2P lleva la probabilidad de esperar más de "
-        f"5 minutos en su caja crítica hasta {p5m_1r2p_peor:.1f}% y 2R+1P la dispara a {p5m_2r1p_peor:.1f}% en pagos (contra {p5m_3m:.1f}% global en 3 Mixtas)."
+        f"de M/G/1 (p entre {p_min_mg1:.3f} y {p_max_mg1:.3f}). Entre las arquitecturas de tres cajas, solo 3 Cajas Mixtas cumple simultáneamente W_{{q}} ≤ 5 min, "
+        f"W ≤ 8 min y ausencia de saturación, situándose exactamente en el borde del límite de riesgo de 5 min bajo cola aleatoria (P(W_{{q}} > 5m) = {p5m_3m:.1f}% "
+        f"global y {p5m_3m_peor:.1f}% en el cajero más cargado, brecha operativamente mitigable con selección observable JSQ que reduce W_{{q}} a {wq_3m_jsq:.2f} min), "
+        f"mientras 1R+2P lleva ese riesgo crítico a {p5m_1r2p_peor:.1f}% y 2R+1P lo dispara a {p5m_2r1p_peor:.1f}% en pagos."
     )
 
     tbl_vv_data = []
@@ -1143,7 +1148,9 @@ def build_document(output_filename: str = None) -> None:
         [Inches(0.75), Inches(0.60), Inches(0.72), Inches(0.68), Inches(1.05), Inches(0.65), Inches(1.15), Inches(0.90)],
         ["Escenario", "Corte k*", "W_{q} Est.", "p (M/G/1)", "P(>5m) G (Máx)", "ER_{100}", "Régimen ρ_{máx}", "Criterio W_{q}"],
         tbl_vv_data,
-        "P(>5m) reporta porcentaje de clientes con espera superior a 5 min global y en el cajero más cargado. p > 0.05 valida H_{0}: μ_{estable} = μ_{M/G/1}.",
+        "Régimen ρ_{máx} clasifica la utilización media simulada del cajero pico en 100 réplicas (distinta de ρ̄ promedio y de ρ_{teór} homogéneo). "
+        "p (M/G/1) emplea prueba t bilateral con error estándar estacionario post-warmup (n = 100); p > 0.05 valida H_{0}: μ_{estable} = μ_{M/G/1}. "
+        "P(>5m) reporta porcentaje de clientes con espera superior a 5 min global y en el cajero más cargado (criterio estricto ≤ 20%).",
         font_size=7.6,
     )
 

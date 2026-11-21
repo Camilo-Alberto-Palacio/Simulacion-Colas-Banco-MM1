@@ -775,7 +775,8 @@ class BankSimulationEngine:
                 "utilizacion_rho_media": rho_m,
                 "utilizacion_rho_sd": rho_sd,
                 "utilizacion_max_media": float(sub["utilizacion_max_rho"].mean()),
-                "regimen_estabilidad": theo["regime_max_rho"],
+                "regimen_estabilidad": classify_utilization_regime(float(sub["utilizacion_max_rho"].mean())),
+                "regimen_estabilidad_teorico": theo["regime_max_rho"],
                 "lq_total_simulada": float(sub["cola_media_lq"].mean()),
                 "l_total_simulada": float(sub["sistema_medio_l"].mean()),
                 "wq_teorica_mm1_min": theo["weighted_wq_mm1"],
@@ -910,6 +911,9 @@ class BankSimulationEngine:
 
             wq_all_m = float(np.mean(wq_all_reps))
             wq_ss_m = float(np.mean(wq_ss_reps))
+            n_ss_reps = len(wq_ss_reps)
+            wq_ss_sd = float(np.std(wq_ss_reps, ddof=1)) if n_ss_reps > 1 else 0.0
+            wq_ss_se = wq_ss_sd / float(np.sqrt(n_ss_reps)) if n_ss_reps > 0 else 0.0
             w_all_m = float(np.mean(w_all_reps))
             w_ss_m = float(np.mean(w_ss_reps))
             sesgo_pct = ((wq_ss_m - wq_all_m) / wq_ss_m * 100.0) if wq_ss_m > 0 else 0.0
@@ -921,6 +925,9 @@ class BankSimulationEngine:
                 "tiempo_corte_aprox_min": t_cut_min,
                 "wq_con_transitorio_min": wq_all_m,
                 "wq_estado_estable_min": wq_ss_m,
+                "wq_estado_estable_sd_min": wq_ss_sd,
+                "wq_estado_estable_se_min": wq_ss_se,
+                "n_replicas_estado_estable": n_ss_reps,
                 "wq_teorica_mg1_min": theo["weighted_wq_mg1"],
                 "w_con_transitorio_min": w_all_m,
                 "w_estado_estable_min": w_ss_m,
@@ -992,7 +999,8 @@ class BankSimulationEngine:
             wq_sim = float(r_sum["espera_wq_media_min"])
             wq_ss = float(w_row["wq_estado_estable_min"])
             wq_mg1 = float(r_sum["wq_teorica_mg1_min"])
-            wq_se = float(r_sum["espera_wq_se_min"])
+            wq_ss_se = float(w_row["wq_estado_estable_se_min"])
+            n_ss = int(w_row.get("n_replicas_estado_estable", n_mc))
             w_sim = float(r_sum["sistema_w_media_min"])
             peor_wq = float(r_sum["peor_cajero_wq_media_min"])
             rho_med = float(r_sum["utilizacion_rho_media"]) * 100.0
@@ -1001,8 +1009,9 @@ class BankSimulationEngine:
             prob_gt5_peor = float(c_sub["prob_wq_mayor_5m_prom"].max())
 
             # Prueba t de Student frente a referencia teórica Pollaczek-Khinchine M/G/1
-            t_stat = (wq_ss - wq_mg1) / wq_se if wq_se > 0 else 0.0
-            df_t = max(1, n_mc - 1)
+            # usando el error estándar del estimador estacionario (post-warmup)
+            t_stat = (wq_ss - wq_mg1) / wq_ss_se if wq_ss_se > 0 else 0.0
+            df_t = max(1, n_ss - 1)
             p_val = _betainc(0.5 * df_t, 0.5, df_t / (df_t + t_stat * t_stat))
 
             if peor_wq > 5.5 or wq_sim > 5.0:
@@ -1016,12 +1025,17 @@ class BankSimulationEngine:
             crit_rho = classify_utilization_regime(rho_max / 100.0)
             crit_prob5 = "Aceptable (<=20%)" if prob_gt5_peor <= 20.0 else "Crítico (>20%)"
 
-            if skey == "E1_3_Mixtas":
-                dictamen = "ÓPTIMO CON 3 CAJAS: cumple metas de espera y P(Wq>5m) sin saturación"
-            elif skey in ("E2_1R_2P", "E3_2R_1P"):
-                dictamen = "NO RECOMENDADO: viola umbrales críticos en servidor cuello de botella"
+            if "Crítico" in crit_wq or "Crítico" in crit_w:
+                dictamen = "NO RECOMENDADO: viola umbrales críticos de espera en servidor cuello de botella"
+            elif "Subutilizado" in crit_rho:
+                dictamen = "REDUNDANTE: cumple esperas con subutilización elevada y sobrecosto de posición"
+            elif "Crítico" in crit_prob5:
+                dictamen = (
+                    "RECOMENDADO CON MITIGACIÓN JSQ: cumple Wq<=5m y W<=8m sin saturación, "
+                    "pero P(Wq>5m) supera levemente el 20% bajo cola aleatoria"
+                )
             else:
-                dictamen = "REDUNDANTE: mejora marginal en Wq con subutilización elevada (>65% ocio)"
+                dictamen = "ÓPTIMO: cumple todas las metas de espera, riesgo P(Wq>5m) y utilización"
 
             rows.append({
                 "escenario": skey,
