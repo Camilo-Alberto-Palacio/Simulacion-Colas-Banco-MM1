@@ -7,6 +7,7 @@
 * **Modalidad:** 1 Solo Presentador / Portavoz (en representación del Grupo 25)
 * **Integrantes del Equipo:** Adriana Andrea Agudelo Agudelo, Camilo Alberto Palacios Turriago, Juan Daniel Pulgarin García y Ruben Dario Jaramillo Cervantes
 * **Duración Objetivo:** **2 minutos y 30 segundos (Máximo permitido: 3:00 minutos)**
+* **Video Publicado (YouTube — 2:39 min):** https://youtu.be/KtiyoEcOqv4
 * **Formato:** Video horizontal (16:9), 1080p, pantalla compartida con las figuras de `results/` o el cuaderno Google Colab + cámara web en esquina
 
 ---

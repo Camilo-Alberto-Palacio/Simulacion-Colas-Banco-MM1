@@ -1,6 +1,7 @@
 # Simulación de Colas Independientes M/M/1 — Solución del Problema Bancario (Banco de Colombia)
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Camilo-Alberto-Palacio/Simulacion-Colas-Banco-MM1/blob/main/Simulacion_Colas_Banco_Colab.ipynb)
+[![Ver Video en YouTube](https://img.shields.io/badge/YouTube-Sustentaci%C3%B3n%20(2%3A39)-FF0000?logo=youtube&logoColor=white)](https://youtu.be/KtiyoEcOqv4)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
 ![Tests](https://img.shields.io/badge/Tests-14%2F14%20Passing-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
@@ -9,6 +10,8 @@
 Modelado matemático, simulación de eventos discretos (DES) y optimización operativa de cajeros independientes **$M/M/1$** para el **Banco de Colombia** durante jornadas diarias de **8 horas ($480\text{ minutos}$)**.
 
 Proyecto desarrollado para la **Actividad Didáctica 2-M3 — Módulo 2** de la asignatura **Simulación (`PREICA2602B020045`)** en la **Institución Universitaria Digital de Antioquia (IU Digital)**.
+
+**Video de sustentación (YouTube, 2:39 min):** https://youtu.be/KtiyoEcOqv4
 
 ---
 
@@ -70,7 +73,7 @@ El **Banco de Colombia** dispone de **3 cajas** (sin cajeros electrónicos) para
 ├── Simulacion_Colas_Banco_Colab.ipynb                # Cuaderno Colab autocontenido y pre-ejecutado
 ├── generate_doc.py                                   # Generador dinámico APA 7 del informe Word (.docx)
 ├── Evidencia de Aprendizaje 3 - Módulo 2. Actividad didáctica 2-M3 - Solución Problema Bancario.docx
-├── GUION_VIDEO_SUSTENTACION.md                       # Guion minuto a minuto (2:30 min)
+├── GUION_VIDEO_SUSTENTACION.md                       # Guion minuto a minuto del video de sustentación (2:39 min)
 ├── requirements.txt
 ├── LICENSE
 └── README.md

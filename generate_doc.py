@@ -1209,11 +1209,18 @@ def build_document(output_filename: str = None) -> None:
     p_gh = doc.add_paragraph()
     p_gh.paragraph_format.left_indent = Inches(0.20)
     p_gh.paragraph_format.space_after = Pt(4)
+    p_gh.paragraph_format.line_spacing = 1.05
     add_rich_runs(p_gh, "Repositorio GitHub:\n", font_size=9.5, color=COLOR_PRIMARY, bold=True)
     add_rich_runs(
         p_gh,
         "https://github.com/Camilo-Alberto-Palacio/Simulacion-Colas-Banco-MM1",
         font_name="Consolas", font_size=8.6, color=COLOR_SECONDARY, bold=True,
+    )
+    add_rich_runs(p_gh, "\nCuaderno Google Colab:\n", font_size=9.5, color=COLOR_PRIMARY, bold=True)
+    add_rich_runs(
+        p_gh,
+        "https://colab.research.google.com/github/Camilo-Alberto-Palacio/Simulacion-Colas-Banco-MM1/blob/main/Simulacion_Colas_Banco_Colab.ipynb",
+        font_name="Consolas", font_size=7.6, color=COLOR_SECONDARY, bold=True,
     )
 
     tree = [
@@ -1238,7 +1245,18 @@ def build_document(output_filename: str = None) -> None:
         rl.font.size = Pt(7.8)
         rl.font.color.rgb = COLOR_PRIMARY
 
-    add_h1("Anexo B: Estructura del Video de Sustentación (2:30 Minutos)")
+    add_h1("Anexo B: Video de Sustentación (2:39 Minutos)")
+    p_vid = doc.add_paragraph()
+    p_vid.paragraph_format.left_indent = Inches(0.20)
+    p_vid.paragraph_format.space_after = Pt(4)
+    p_vid.paragraph_format.line_spacing = 1.08
+    add_rich_runs(p_vid, "Video en YouTube: ", font_size=9.5, color=COLOR_PRIMARY, bold=True)
+    add_rich_runs(p_vid, "https://youtu.be/KtiyoEcOqv4", font_name="Consolas", font_size=8.6, color=COLOR_SECONDARY, bold=True)
+    add_rich_runs(
+        p_vid,
+        "\nTítulo: Simulación de Colas M/M/1 — Caso Banco de Colombia | Grupo 25 (IU Digital) · Duración: 2:39 min",
+        font_size=8.8, color=COLOR_PRIMARY, italic=True,
+    )
     add_p(
         f"El libreto cronometrado de exposición oral se encuentra en GUION_VIDEO_SUSTENTACION.md dentro del repositorio. Abarca cinco bloques: "
         f"(1) planteamiento de la paradoja operativa 70/30 frente al peso real del servicio; (2) presentación del Grupo 25 y lectura de las tablas del "
